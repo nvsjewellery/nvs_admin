@@ -18,7 +18,6 @@ import { cn } from "@/lib/utils";
 type NavItem = { to: string; label: string; icon: typeof LayoutDashboard; exact?: boolean };
 const items: NavItem[] = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/rates", label: "Live Metal Rates", icon: LineChart },
   { to: "/products", label: "Products", icon: Package },
   { to: "/categories", label: "Categories", icon: FolderTree },
   { to: "/discounts", label: "Discounts", icon: Percent },
