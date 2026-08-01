@@ -69,4 +69,8 @@ export const adminApi = {
     request(`/reels/${id}`, { method: "PUT", body: JSON.stringify(data) }),
   deleteReel: (id: string) =>
     request(`/reels/${id}`, { method: "DELETE" }),
+
+  // Customers
+getCustomers: () =>
+  request("/admin/customers", { method: "GET" }),
 };
