@@ -36,7 +36,7 @@ export const adminApi = {
   bulkProductAction: (ids: string[], action: "activate" | "deactivate" | "delete") =>
     request("/admin/products/bulk", { method: "POST", body: JSON.stringify({ ids, action }) }),
 
-  // Image Upload
+  // Image / Media Upload
   uploadImage: (file: File): Promise<{ success: boolean; url: string }> => {
     const formData = new FormData();
     formData.append("image", file);
@@ -60,4 +60,13 @@ export const adminApi = {
     request("/admin/discounts", { method: "POST", body: JSON.stringify(data) }),
   deleteDiscount: (id: string) =>
     request(`/admin/discounts/${id}`, { method: "DELETE" }),
+
+  // Reels APIs (Refactored to use request helper)
+  getReels: () => request("/reels", { method: "GET" }),
+  createReel: (data: Record<string, any>) =>
+    request("/reels", { method: "POST", body: JSON.stringify(data) }),
+  updateReel: (id: string, data: Record<string, any>) =>
+    request(`/reels/${id}`, { method: "PUT", body: JSON.stringify(data) }),
+  deleteReel: (id: string) =>
+    request(`/reels/${id}`, { method: "DELETE" }),
 };

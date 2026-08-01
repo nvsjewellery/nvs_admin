@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react";
 import { adminApi } from "./adminApi";
 import {
   INITIAL_RATES, INITIAL_RATE_HISTORY,
@@ -29,6 +29,16 @@ type Category = {
   sortOrder: number;
 };
 
+// Define Reel type
+export type Reel = {
+  id: string;
+  title?: string;
+  instagramUrl: string;
+  videoUrl: string;
+  isActive: boolean;
+  sortOrder: number;
+};
+
 type Ctx = {
   rates: Rates;
   setRates: (r: Rates) => void;
@@ -45,10 +55,10 @@ type Ctx = {
   bulkProductAction: (ids: string[], action: "activate" | "deactivate" | "delete") => Promise<void>;
 
   discounts: Discount[];
-discountsLoading: boolean;
-loadDiscounts: () => Promise<void>;
-addDiscount: (d: Omit<Discount, "id" | "createdAt">) => Promise<void>;
-removeDiscount: (id: string) => Promise<void>;
+  discountsLoading: boolean;
+  loadDiscounts: () => Promise<void>;
+  addDiscount: (d: Omit<Discount, "id" | "createdAt">) => Promise<void>;
+  removeDiscount: (id: string) => Promise<void>;
 
   adminUser: AdminUser | null;
   authChecked: boolean;
@@ -63,6 +73,13 @@ removeDiscount: (id: string) => Promise<void>;
   updateCategory: (id: string, data: Record<string, any>) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
   reorderCategories: (orderedIds: string[]) => Promise<void>;
+
+  reels: Reel[];
+  reelsLoading: boolean;
+  loadReels: () => Promise<void>;
+  createReel: (data: Partial<Reel>, videoFile?: File | null) => Promise<void>;
+  updateReel: (id: string, data: Partial<Reel>) => Promise<void>;
+  deleteReel: (id: string) => Promise<void>;
 };
 
 const AdminCtx = createContext<Ctx | null>(null);
@@ -76,23 +93,17 @@ export function AdminProvider({ children }: { children: ReactNode }) {
   const [productsLoading, setProductsLoading] = useState(false);
 
   const [discounts, setDiscounts] = useState<Discount[]>([]);
-const [discountsLoading, setDiscountsLoading] = useState(false);
-
-const loadDiscounts = async () => {
-  setDiscountsLoading(true);
-  try {
-    const res = await adminApi.getDiscounts();
-    setDiscounts(res.discounts ?? []);
-  } finally {
-    setDiscountsLoading(false);
-  }
-};
+  const [discountsLoading, setDiscountsLoading] = useState(false);
 
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoriesLoading, setCategoriesLoading] = useState(false);
+
+  // --- REELS STATE ---
+  const [reels, setReels] = useState<Reel[]>([]);
+  const [reelsLoading, setReelsLoading] = useState(false);
 
   const setRates = (r: Rates) => {
     setRatesRaw(r);
@@ -123,19 +134,20 @@ const loadDiscounts = async () => {
     }
   };
 
+  const loadDiscounts = async () => {
+    setDiscountsLoading(true);
+    try {
+      const res = await adminApi.getDiscounts();
+      setDiscounts(res.discounts ?? []);
+    } finally {
+      setDiscountsLoading(false);
+    }
+  };
+
   const loadProducts = async () => {
     setProductsLoading(true);
-    const { computeProductPricing } = require("../utils/pricing");
     try {
       const res = await adminApi.getProducts();
-      const productsWithPrice = await Promise.all(
-  products.map(async (p) => {
-    const pricing = await computeProductPricing(p);
-    return { ...p, livePrice: pricing.total };
-  })
-);
-
-res.status(200).json({ success: true, products: productsWithPrice });
       setProducts(res.products ?? []);
     } finally {
       setProductsLoading(false);
@@ -152,14 +164,48 @@ res.status(200).json({ success: true, products: productsWithPrice });
     }
   };
 
-  // Once we know the admin is authenticated, pull real data from the backend
+  // --- REELS HANDLERS ---
+  const loadReels = useCallback(async () => {
+    setReelsLoading(true);
+    try {
+      const res = await adminApi.getReels();
+      setReels(res.reels ?? []);
+    } catch (err) {
+      console.error("Error loading reels:", err);
+    } finally {
+      setReelsLoading(false);
+    }
+  }, []);
+
+  const createReel = async (data: Partial<Reel>, videoFile?: File | null) => {
+    let videoUrl = data.videoUrl ?? "";
+    if (videoFile) {
+      const uploadRes = await adminApi.uploadImage(videoFile);
+      videoUrl = uploadRes.url;
+    }
+    const res = await adminApi.createReel({ ...data, videoUrl });
+    setReels((rs) => [...rs, res.reel]);
+  };
+
+  const updateReel = async (id: string, data: Partial<Reel>) => {
+    const res = await adminApi.updateReel(id, data);
+    setReels((rs) => rs.map((r) => (r.id === id ? res.reel : r)));
+  };
+
+  const deleteReel = async (id: string) => {
+    await adminApi.deleteReel(id);
+    setReels((rs) => rs.filter((r) => r.id !== id));
+  };
+
+  // Automatically load backend data when admin logs in
   useEffect(() => {
     if (adminUser) {
       loadProducts();
       loadCategories();
       loadDiscounts();
+      loadReels();
     }
-  }, [adminUser]);
+  }, [adminUser, loadReels]);
 
   const createProduct = async (p: Partial<Product>, imageFile?: File | null) => {
     let imageUrl = p.image ?? "";
@@ -221,14 +267,14 @@ res.status(200).json({ success: true, products: productsWithPrice });
   };
 
   const addDiscount = async (d: Omit<Discount, "id" | "createdAt">) => {
-  const res = await adminApi.createDiscount(d);
-  setDiscounts((x) => [res.discount, ...x]);
-};
+    const res = await adminApi.createDiscount(d);
+    setDiscounts((x) => [res.discount, ...x]);
+  };
 
-const removeDiscount = async (id: string) => {
-  await adminApi.deleteDiscount(id);
-  setDiscounts((x) => x.filter((d) => d.id !== id));
-};
+  const removeDiscount = async (id: string) => {
+    await adminApi.deleteDiscount(id);
+    setDiscounts((x) => x.filter((d) => d.id !== id));
+  };
 
   const value = useMemo<Ctx>(() => ({
     rates, setRates, rateHistory,
@@ -245,15 +291,17 @@ const removeDiscount = async (id: string) => {
 
     categories, categoriesLoading, loadCategories,
     createCategory, updateCategory, deleteCategory, reorderCategories,
+
+    reels, reelsLoading, loadReels,
+    createReel, updateReel, deleteReel,
   }), [
     rates, rateHistory, ratesLastUpdated,
     products, productsLoading,
-    discounts,
+    discounts, discountsLoading,
     adminUser, authChecked,
     categories, categoriesLoading,
+    reels, reelsLoading, loadReels,
   ]);
-
-  
 
   return <AdminCtx.Provider value={value}>{children}</AdminCtx.Provider>;
 }
