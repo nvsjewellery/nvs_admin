@@ -1,7 +1,17 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
-  LayoutDashboard, LineChart, Package, FolderTree, Percent,
-  Users, ShoppingBag, Truck, Star, LogOut, Gem,
+  LayoutDashboard,
+  LineChart,
+  Package,
+  FolderTree,
+  Percent,
+  Users,
+  ShoppingBag,
+  Truck,
+  Star,
+  LogOut,
+  Gem,
+  Clapperboard,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +26,11 @@ const items: NavItem[] = [
   { to: "/orders", label: "Orders", icon: ShoppingBag },
   { to: "/shipping", label: "Shipping / Tracking", icon: Truck },
   { to: "/reviews", label: "Reviews", icon: Star },
+  {
+  to: "/reels",
+  label: "Instagram Reels",
+  icon: Clapperboard,
+},
 ];
 
 export function AdminSidebar({ collapsed }: { collapsed: boolean }) {

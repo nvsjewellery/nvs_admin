@@ -5,18 +5,23 @@ const { spacesClient } = require("../config/spaces");
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB raw upload cap
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50MB
+  },
   fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image files are allowed"));
+    if (
+      file.mimetype.startsWith("image/") ||
+      file.mimetype.startsWith("video/")
+    ) {
+      return cb(null, true);
     }
-    cb(null, true);
+
+    cb(new Error("Only images and videos are allowed"));
   },
 });
 
-// Resizes to max 1200px wide, converts to WebP, compresses — typically 100-300KB output
-const processAndUploadImage = async (fileBuffer, originalName) => {
-  const processedBuffer = await sharp(fileBuffer)
+const processAndUploadImage = async (buffer, originalName) => {
+  const processedBuffer = await sharp(buffer)
     .resize({ width: 1200, withoutEnlargement: true })
     .webp({ quality: 80 })
     .toBuffer();
@@ -36,4 +41,26 @@ const processAndUploadImage = async (fileBuffer, originalName) => {
   return `${process.env.DO_SPACES_ENDPOINT}/${process.env.DO_SPACES_BUCKET}/${key}`;
 };
 
-module.exports = { upload, processAndUploadImage };
+const uploadVideo = async (buffer, originalName, mimetype) => {
+  const ext = originalName.split(".").pop();
+
+  const key = `reels/${Date.now()}.${ext}`;
+
+  await spacesClient.send(
+    new PutObjectCommand({
+      Bucket: process.env.DO_SPACES_BUCKET,
+      Key: key,
+      Body: buffer,
+      ContentType: mimetype,
+      ACL: "public-read",
+    })
+  );
+
+  return `${process.env.DO_SPACES_ENDPOINT}/${process.env.DO_SPACES_BUCKET}/${key}`;
+};
+
+module.exports = {
+  upload,
+  processAndUploadImage,
+  uploadVideo,
+};
