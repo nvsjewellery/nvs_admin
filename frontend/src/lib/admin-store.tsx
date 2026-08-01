@@ -125,8 +125,17 @@ const loadDiscounts = async () => {
 
   const loadProducts = async () => {
     setProductsLoading(true);
+    const { computeProductPricing } = require("../utils/pricing");
     try {
       const res = await adminApi.getProducts();
+      const productsWithPrice = await Promise.all(
+  products.map(async (p) => {
+    const pricing = await computeProductPricing(p);
+    return { ...p, livePrice: pricing.total };
+  })
+);
+
+res.status(200).json({ success: true, products: productsWithPrice });
       setProducts(res.products ?? []);
     } finally {
       setProductsLoading(false);

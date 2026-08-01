@@ -61,9 +61,10 @@ export type Product = {
   image: string;
   status: "Draft" | "Active" | "Inactive";
   stock: number;
-  sold?: number; // <--- ADD THIS PROPERTY
+  sold?: number;
   createdAt?: string;
   updatedAt?: string;
+  livePrice?: number; // <--- ADDED: Real-time computed price from backend
 };
 
 const img = (seed: string) =>
@@ -211,5 +212,5 @@ export const STAFF: StaffUser[] = [
 export const PERMISSION_MODULES = [
   "Dashboard", "Live Metal Rates", "Products", "Categories", "Discounts",
   "Homepage Builder", "Customers", "Orders", "Coupons", "Shipping",
-  "Reviews", "Reports", "Users & Roles", "Settings",
+  "Reviews", "Reports", "Users & Roles", "Settings",,
 ];

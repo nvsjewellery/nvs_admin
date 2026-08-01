@@ -8,26 +8,70 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   name      String
-  email     String   @unique
+  email     String    @unique
   password  String
   phone     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+
+  addresses Address[]
+  wishlist  Wishlist[]
+  cart      Cart[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 
   @@map("users")
 }
 
-enum Metal {
-  Gold
-  Silver
+model Address {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  label       String   @default("Home")
+  addressLine String
+  city        String
+  pincode     String
+  isDefault   Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("addresses")
 }
 
-enum ProductStatus {
-  Active
-  Inactive
-  Draft
+model Wishlist {
+  id        String   @id @default(cuid())
+
+  userId    String
+  productId String
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("wishlists")
+}
+
+model Cart {
+  id        String   @id @default(cuid())
+
+  userId    String
+  productId String
+
+  qty Int @default(1)
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, productId])
+  @@map("cart")
 }
 
 model Product {
@@ -43,43 +87,39 @@ model Product {
   hallmarkId       String?
   sku              String        @unique
   va               Float?
-  gstRate          Float?        @default(3) // <--- ADDED HERE
   isDirectSterling Boolean       @default(false)
   pieceCost        Float?
   image            String        @default("")
   status           ProductStatus @default(Draft)
   stock            Int           @default(0)
   sold             Int           @default(0)
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+
+  wishlist Wishlist[]
+  cart      Cart[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  gstRate Float? @default(3)
 
   @@map("products")
 }
 
 model Category {
-  id          String   @id @default(cuid())
-  metal       Metal
-  name        String
-  slug        String
-  metaTitle   String   @default("")
-  metaDesc    String   @default("")
-  image       String   @default("")
-  sortOrder   Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id        String   @id @default(cuid())
+  metal     Metal
+  name      String
+  slug      String
+  metaTitle String   @default("")
+  metaDesc  String   @default("")
+  image     String   @default("")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([metal, slug])
+
   @@map("categories")
-}
-
-enum DiscountScope {
-  VA
-  Total
-}
-
-enum DiscountKind {
-  percent
-  flat
 }
 
 model Discount {
@@ -93,4 +133,25 @@ model Discount {
   createdAt  DateTime      @default(now())
 
   @@map("discounts")
+}
+
+enum Metal {
+  Gold
+  Silver
+}
+
+enum ProductStatus {
+  Active
+  Inactive
+  Draft
+}
+
+enum DiscountScope {
+  VA
+  Total
+}
+
+enum DiscountKind {
+  percent
+  flat
 }

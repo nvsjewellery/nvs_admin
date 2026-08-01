@@ -206,7 +206,7 @@ function ProductsPage() {
                         <>{p.grossWeight}g · VA {p.va}% · GST {p.gstRate ?? 3}%</>
                       )}
                     </TableCell>
-                    <TableCell className="tabular-nums font-medium">{inr(productTotal(p, rates))}</TableCell>
+                    <TableCell className="tabular-nums font-medium">{inr(p.livePrice ?? productTotal(p, rates))}</TableCell>
                     <TableCell className={p.stock < 3 ? "text-destructive font-medium" : ""}>{p.stock}</TableCell>
                     <TableCell><StatusBadge status={p.status} /></TableCell>
                     <TableCell>
