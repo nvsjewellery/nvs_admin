@@ -85,18 +85,49 @@ function AdminReelsPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium">
-            Preview Video (.mp4)
-          </label>
+          <div className="space-y-2">
+  <label className="block text-sm font-medium">
+    Preview Video (.mp4)
+  </label>
 
-          <input
-            type="file"
-            accept="video/mp4"
-            required
-            onChange={(e) =>
-              setVideoFile(e.target.files?.[0] ?? null)
-            }
-          />
+  <label
+    htmlFor="video-upload"
+    className="flex cursor-pointer items-center justify-between rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/20 p-4 transition hover:border-primary hover:bg-muted/40"
+  >
+    <div>
+      <p className="font-medium">
+        {videoFile ? videoFile.name : "Choose MP4 video"}
+      </p>
+
+      <p className="text-xs text-muted-foreground mt-1">
+        Click to browse or drag & drop
+      </p>
+    </div>
+
+    <div className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-white">
+      Browse
+    </div>
+  </label>
+
+  <input
+    id="video-upload"
+    type="file"
+    accept="video/mp4"
+    required
+    className="hidden"
+    onChange={(e) =>
+      setVideoFile(e.target.files?.[0] ?? null)
+    }
+  />
+
+  {videoFile && (
+    <video
+      src={URL.createObjectURL(videoFile)}
+      controls
+      className="mt-3 w-full rounded-lg border"
+    />
+  )}
+</div>
         </div>
 
         <button
