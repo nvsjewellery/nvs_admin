@@ -71,6 +71,27 @@ export const adminApi = {
     request(`/reels/${id}`, { method: "DELETE" }),
 
   // Customers
-getCustomers: () =>
-  request("/admin/customers", { method: "GET" }),
+  getCustomers: () =>
+    request("/admin/customers", { method: "GET" }),
+
+  // Orders
+  getOrders: (params?: { status?: string; search?: string }) => {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== "all") query.set("status", params.status);
+    if (params?.search) query.set("search", params.search);
+    const qs = query.toString();
+    return request(`/admin/orders${qs ? `?${qs}` : ""}`, { method: "GET" });
+  },
+  getOrderById: (orderId: string) =>
+    request(`/admin/orders/${orderId}`, { method: "GET" }),
+  updateOrderStatus: (orderId: string, status: string) =>
+    request(`/admin/orders/${orderId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  generateOrderManifest: (orderId: string) =>
+    request(`/admin/orders/${orderId}/generate-manifest`, { method: "POST" }),
+  generateOrderLabel: (orderId: string) =>
+    request(`/admin/orders/${orderId}/generate-label`, { method: "POST" }),
+  printOrderInvoice: (orderId: string) =>
+    request(`/admin/orders/${orderId}/print-invoice`, { method: "POST" }),
+  cancelOrder: (orderId: string) =>
+    request(`/admin/orders/${orderId}/cancel`, { method: "POST" }),
 };

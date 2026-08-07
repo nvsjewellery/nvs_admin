@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AdminProvider, useAdmin } from "@/lib/admin-store";
+import { Lock, Mail, ArrowRight, Loader2, Sparkles, AlertCircle } from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   component: () => (
@@ -34,43 +35,99 @@ function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen grid place-items-center bg-muted/30 px-4">
-      <form onSubmit={submit} className="w-full max-w-sm bg-card border rounded-2xl p-8 shadow-sm">
-        <h1 className="text-2xl font-semibold text-center">Admin Sign In</h1>
-        <p className="text-sm text-muted-foreground text-center mt-1">NVS Jewellery Admin Panel</p>
+    <div className="relative min-h-screen w-full flex items-center justify-center bg-background overflow-hidden px-4">
+      {/* Background Ambient Glows */}
+      <div className="absolute -top-32 -left-32 w-96 h-96 bg-gold/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
 
-        <label className="block mt-6">
-          <span className="text-xs font-medium text-muted-foreground">Email</span>
-          <input
-            type="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="mt-1 w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:border-gold bg-background"
-          />
-        </label>
+      {/* Main Card */}
+      <div className="relative w-full max-w-md bg-card/70 backdrop-blur-xl border border-border/50 rounded-3xl p-8 sm:p-10 shadow-2xl">
+        
+        {/* Header Badge & Title */}
+        <div className="flex flex-col items-center text-center">
+          <div className="h-12 w-12 rounded-2xl bg-gold/10 border border-gold/20 flex items-center justify-center text-gold mb-4 shadow-inner">
+            <Sparkles className="w-6 h-6 text-gold" />
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
+            Admin Sign In
+          </h1>
+          <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 font-medium">
+            NVS Jewellery Management Panel
+          </p>
+        </div>
 
-        <label className="block mt-4">
-          <span className="text-xs font-medium text-muted-foreground">Password</span>
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 w-full border rounded-lg px-3 py-2.5 text-sm outline-none focus:border-gold bg-background"
-          />
-        </label>
+        {/* Form */}
+        <form onSubmit={submit} className="mt-8 space-y-4">
+          
+          {/* Email Input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">
+              Email Address
+            </label>
+            <div className="relative flex items-center">
+              <Mail className="absolute left-3.5 w-4 h-4 text-muted-foreground" />
+              <input
+                type="email"
+                required
+                placeholder="admin@nvsjewellery.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-input bg-background/50 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold transition-all duration-200"
+              />
+            </div>
+          </div>
 
-        {error && <p className="text-xs text-red-600 mt-3">{error}</p>}
+          {/* Password Input */}
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">
+              Password
+            </label>
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3.5 w-4 h-4 text-muted-foreground" />
+              <input
+                type="password"
+                required
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-input bg-background/50 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold transition-all duration-200"
+              />
+            </div>
+          </div>
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full mt-6 bg-gold text-gold-foreground rounded-lg py-2.5 text-sm font-semibold disabled:opacity-60"
-        >
-          {loading ? "Signing in..." : "Sign In"}
-        </button>
-      </form>
+          {/* Error Banner */}
+          {error && (
+            <div className="flex items-center gap-2 p-3 rounded-xl bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium animate-in fade-in-50">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* Submit Button */}
+          <button
+            type="submit"
+            disabled={loading}
+            className="group relative w-full mt-2 bg-gold hover:opacity-90 active:scale-[0.99] text-gold-foreground rounded-xl py-3 text-sm font-semibold transition-all duration-200 shadow-lg shadow-gold/20 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Signing in...</span>
+              </>
+            ) : (
+              <>
+                <span>Access Dashboard</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </>
+            )}
+          </button>
+        </form>
+
+        {/* Footer Note */}
+        <p className="text-[11px] text-center text-muted-foreground/70 mt-8">
+          Protected route • Authorized personnel only
+        </p>
+      </div>
     </div>
   );
 }

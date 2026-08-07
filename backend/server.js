@@ -35,7 +35,7 @@ app.use("/api/admin/categories", categoryRoutes);
 app.use("/api/admin/discounts", discountRoutes);
 app.use("/api/reels", reelRoutes);
 app.use("/api/admin/customers", require("./routes/customerRoutes"));
-
+app.use("/api/admin/orders", require("./routes/adminOrderRoutes"));
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 app.use(notFound);
