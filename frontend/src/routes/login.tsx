@@ -1,7 +1,16 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { AdminProvider, useAdmin } from "@/lib/admin-store";
-import { Lock, Mail, ArrowRight, Loader2, Sparkles, AlertCircle } from "lucide-react";
+import {
+  Lock,
+  Mail,
+  ArrowRight,
+  Loader2,
+  Sparkles,
+  AlertCircle,
+  Eye,
+  EyeOff,
+} from "lucide-react";
 
 export const Route = createFileRoute("/login")({
   component: () => (
@@ -14,16 +23,23 @@ export const Route = createFileRoute("/login")({
 function LoginPage() {
   const nav = useNavigate();
   const { loginAdmin } = useAdmin();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Password visibility state
+  const [showPassword, setShowPassword] = useState(false);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
+
     if (!email || !password) return;
+
     setLoading(true);
+
     try {
       await loginAdmin(email, password);
       nav({ to: "/" });
@@ -35,10 +51,10 @@ function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen w-full flex items-center justify-center bg-background overflow-hidden px-4">
+    <div className="min-h-screen bg-background flex items-center justify-center p-4 relative overflow-hidden">
       {/* Background Ambient Glows */}
-      <div className="absolute -top-32 -left-32 w-96 h-96 bg-gold/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-32 -right-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -top-32 -left-32 h-80 w-80 rounded-full bg-gold/10 blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-32 -right-32 h-80 w-80 rounded-full bg-gold/10 blur-3xl pointer-events-none" />
 
       {/* Main Card */}
       <div className="relative w-full max-w-md bg-card/70 backdrop-blur-xl border border-border/50 rounded-3xl p-8 sm:p-10 shadow-2xl">
@@ -48,9 +64,11 @@ function LoginPage() {
           <div className="h-12 w-12 rounded-2xl bg-gold/10 border border-gold/20 flex items-center justify-center text-gold mb-4 shadow-inner">
             <Sparkles className="w-6 h-6 text-gold" />
           </div>
+
           <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight text-foreground">
             Admin Sign In
           </h1>
+
           <p className="text-xs sm:text-sm text-muted-foreground mt-1.5 font-medium">
             NVS Jewellery Management Panel
           </p>
@@ -64,8 +82,10 @@ function LoginPage() {
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">
               Email Address
             </label>
+
             <div className="relative flex items-center">
-              <Mail className="absolute left-3.5 w-4 h-4 text-muted-foreground" />
+              <Mail className="absolute left-3.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+
               <input
                 type="email"
                 required
@@ -82,16 +102,34 @@ function LoginPage() {
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider ml-1">
               Password
             </label>
+
             <div className="relative flex items-center">
-              <Lock className="absolute left-3.5 w-4 h-4 text-muted-foreground" />
+              {/* Lock Icon */}
+              <Lock className="absolute left-3.5 w-4 h-4 text-muted-foreground pointer-events-none" />
+
+              {/* Password Input */}
               <input
-                type="password"
+                type={showPassword ? "text" : "password"}
                 required
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-input bg-background/50 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold transition-all duration-200"
+                className="w-full pl-10 pr-11 py-3 rounded-xl border border-input bg-background/50 text-sm placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-gold/50 focus:border-gold transition-all duration-200"
               />
+
+              {/* Show / Hide Password */}
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3.5 flex items-center justify-center text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="w-4 h-4" />
+                ) : (
+                  <Eye className="w-4 h-4" />
+                )}
+              </button>
             </div>
           </div>
 
@@ -107,7 +145,7 @@ function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="group relative w-full mt-2 bg-gold hover:opacity-90 active:scale-[0.99] text-gold-foreground rounded-xl py-3 text-sm font-semibold transition-all duration-200 shadow-lg shadow-gold/20 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none"
+            className="group relative w-full mt-2 bg-gold hover:opacity-90 active:scale-[0.99] text-gold-foreground rounded-xl py-3 text-sm font-semibold transition-all duration-200 shadow-lg shadow-gold/20 flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:transform-none cursor-pointer"
           >
             {loading ? (
               <>
