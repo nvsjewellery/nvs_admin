@@ -44,9 +44,15 @@ export function AdminSidebar({ collapsed }: { collapsed: boolean }) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   async function handleLogout() {
-    await logoutAdmin();
-    nav({ to: "/login" });
+  const confirmed = window.confirm("Are you sure you want to logout?");
+
+  if (!confirmed) {
+    return;
   }
+
+  await logoutAdmin();
+  nav({ to: "/login" });
+}
 
   return (
     <>

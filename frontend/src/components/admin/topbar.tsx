@@ -16,9 +16,15 @@ export function AdminTopbar({ onToggle }: { onToggle: () => void }) {
   const nav = useNavigate();
 
   async function handleLogout() {
-    await logoutAdmin();
-    nav({ to: "/login" });
+  const confirmed = window.confirm("Are you sure you want to logout?");
+
+  if (!confirmed) {
+    return;
   }
+
+  await logoutAdmin();
+  nav({ to: "/login" });
+}
 
   const initials = adminUser?.email
     ? adminUser.email.slice(0, 2).toUpperCase()
