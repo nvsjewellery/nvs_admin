@@ -1,19 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Search, Download } from "lucide-react";
+import {
+  Search,
+  Download,
+  FileSpreadsheet,
+  FileText,
+} from "lucide-react";
 
 import { PageHeader } from "@/components/admin/shared";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+
 import {
   Table,
   TableBody,
@@ -23,7 +30,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
 import { adminApi } from "@/lib/adminApi";
+
+import * as XLSX from "xlsx";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export const Route = createFileRoute("/_admin/customers")({
   head: () => ({
@@ -65,16 +83,130 @@ function CustomersPage() {
   }, []);
 
   const filtered = useMemo(() => {
-    return customers.filter((c) => {
-      const q = search.toLowerCase();
+    const q = search.toLowerCase().trim();
 
+    return customers.filter((customer) => {
       return (
-        c.name.toLowerCase().includes(q) ||
-        c.email.toLowerCase().includes(q) ||
-        (c.phone ?? "").includes(q)
+        customer.name.toLowerCase().includes(q) ||
+        customer.email.toLowerCase().includes(q) ||
+        (customer.phone ?? "").includes(q)
       );
     });
   }, [customers, search]);
+
+  // ============================================================
+  // EXPORT EXCEL
+  // ============================================================
+
+  function exportExcel() {
+    if (filtered.length === 0) {
+      toast.error("No customers available to export");
+      return;
+    }
+
+    const rows = filtered.map((customer) => ({
+      "Customer ID": customer.id,
+      Name: customer.name,
+      Email: customer.email,
+      Phone: customer.phone || "",
+      Addresses: customer.addresses,
+      Wishlist: customer.wishlist,
+      "Cart Items": customer.cart,
+      Joined: new Date(customer.joined).toLocaleDateString("en-IN"),
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+
+    const workbook = XLSX.utils.book_new();
+
+    XLSX.utils.book_append_sheet(
+      workbook,
+      worksheet,
+      "Customers"
+    );
+
+    XLSX.writeFile(
+      workbook,
+      `customers-report-${Date.now()}.xlsx`
+    );
+
+    toast.success("Customers exported to Excel");
+  }
+
+  // ============================================================
+  // EXPORT PDF
+  // ============================================================
+
+  function exportPdf() {
+    if (filtered.length === 0) {
+      toast.error("No customers available to export");
+      return;
+    }
+
+    const doc = new jsPDF({
+      orientation: "landscape",
+    });
+
+    doc.setFontSize(14);
+
+    doc.text(
+      "NVS Jewellery — Customers Report",
+      14,
+      15
+    );
+
+    doc.setFontSize(9);
+
+    doc.text(
+      `Generated: ${new Date().toLocaleString(
+        "en-IN"
+      )} · ${filtered.length} customers`,
+      14,
+      21
+    );
+
+    autoTable(doc, {
+      startY: 26,
+
+      head: [
+        [
+          "Customer",
+          "Email",
+          "Phone",
+          "Addresses",
+          "Wishlist",
+          "Cart",
+          "Joined",
+        ],
+      ],
+
+      body: filtered.map((customer) => [
+        customer.name,
+        customer.email,
+        customer.phone || "—",
+        customer.addresses,
+        customer.wishlist,
+        customer.cart,
+        new Date(customer.joined).toLocaleDateString(
+          "en-IN"
+        ),
+      ]),
+
+      styles: {
+        fontSize: 8,
+      },
+
+      headStyles: {
+        fillColor: [184, 134, 11],
+      },
+    });
+
+    doc.save(
+      `customers-report-${Date.now()}.pdf`
+    );
+
+    toast.success("Customers exported to PDF");
+  }
 
   return (
     <>
@@ -82,12 +214,30 @@ function CustomersPage() {
         title="Customers"
         description={`${customers.length} Registered Customers`}
         actions={
-          <Button variant="outline">
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline">
+                <Download className="h-4 w-4 mr-1" />
+                Export
+              </Button>
+            </DropdownMenuTrigger>
+
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportExcel}>
+                <FileSpreadsheet className="h-4 w-4 mr-2" />
+                Export as Excel
+              </DropdownMenuItem>
+
+              <DropdownMenuItem onClick={exportPdf}>
+                <FileText className="h-4 w-4 mr-2" />
+                Export as PDF
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         }
       />
+
+      {/* SEARCH */}
 
       <Card className="mb-5">
         <CardContent className="p-4">
@@ -98,79 +248,85 @@ function CustomersPage() {
               placeholder="Search customers..."
               className="pl-9"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) =>
+                setSearch(e.target.value)
+              }
             />
           </div>
         </CardContent>
       </Card>
 
+      {/* CUSTOMER TABLE */}
+
       <Card>
         <CardContent className="p-0">
-
           {loading ? (
-
             <div className="p-10 text-center text-muted-foreground">
               Loading customers...
             </div>
-
+          ) : filtered.length === 0 ? (
+            <div className="p-10 text-center text-muted-foreground">
+              No customers found.
+            </div>
           ) : (
-
             <Table>
-
               <TableHeader>
-
                 <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead>Addresses</TableHead>
-                  <TableHead>Wishlist</TableHead>
-                  <TableHead>Cart</TableHead>
-                  <TableHead>Joined</TableHead>
-                </TableRow>
+                  <TableHead>
+                    Customer
+                  </TableHead>
 
+                  <TableHead>
+                    Contact
+                  </TableHead>
+
+                  <TableHead>
+                    Addresses
+                  </TableHead>
+
+                  <TableHead>
+                    Wishlist
+                  </TableHead>
+
+                  <TableHead>
+                    Cart
+                  </TableHead>
+
+                  <TableHead>
+                    Joined
+                  </TableHead>
+                </TableRow>
               </TableHeader>
 
               <TableBody>
-
                 {filtered.map((customer) => (
-
                   <TableRow
                     key={customer.id}
                     className="cursor-pointer hover:bg-muted/40"
-                    onClick={() => setSelected(customer)}
+                    onClick={() =>
+                      setSelected(customer)
+                    }
                   >
-
                     <TableCell>
-
                       <div className="flex items-center gap-3">
-
                         <Avatar className="h-9 w-9">
-
                           <AvatarFallback className="bg-gold/20 text-gold-foreground">
-
                             {customer.name
                               .split(" ")
                               .map((n) => n[0])
                               .join("")}
-
                           </AvatarFallback>
-
                         </Avatar>
 
                         <div>
-
                           <div className="font-medium">
                             {customer.name}
                           </div>
-
                         </div>
-
                       </div>
-
                     </TableCell>
 
                     <TableCell>
-
                       <div className="text-sm">
                         {customer.email}
                       </div>
@@ -178,56 +334,50 @@ function CustomersPage() {
                       <div className="text-xs text-muted-foreground">
                         {customer.phone || "-"}
                       </div>
-
                     </TableCell>
 
                     <TableCell>
-
                       {customer.addresses}
-
                     </TableCell>
 
                     <TableCell>
-
                       {customer.wishlist}
-
                     </TableCell>
 
                     <TableCell>
-
                       {customer.cart}
-
                     </TableCell>
 
                     <TableCell className="text-muted-foreground text-xs">
-
-                      {new Date(customer.joined).toLocaleDateString()}
-
+                      {new Date(
+                        customer.joined
+                      ).toLocaleDateString("en-IN")}
                     </TableCell>
-
                   </TableRow>
-
                 ))}
-
               </TableBody>
-
             </Table>
-
           )}
-
         </CardContent>
       </Card>
-            <Dialog
+
+      {/* CUSTOMER DETAILS */}
+
+      <Dialog
         open={!!selected}
         onOpenChange={(open) => {
-          if (!open) setSelected(null);
+          if (!open) {
+            setSelected(null);
+          }
         }}
       >
         <DialogContent className="max-w-lg">
           {selected && (
             <>
               <DialogHeader>
-                <DialogTitle>{selected.name}</DialogTitle>
+                <DialogTitle>
+                  {selected.name}
+                </DialogTitle>
               </DialogHeader>
 
               <div className="space-y-5 text-sm">
@@ -238,22 +388,31 @@ function CustomersPage() {
                     <div className="text-xs uppercase text-muted-foreground mb-1">
                       Email
                     </div>
-                    <div>{selected.email}</div>
+
+                    <div>
+                      {selected.email}
+                    </div>
                   </div>
 
                   <div>
                     <div className="text-xs uppercase text-muted-foreground mb-1">
                       Phone
                     </div>
-                    <div>{selected.phone || "-"}</div>
+
+                    <div>
+                      {selected.phone || "-"}
+                    </div>
                   </div>
 
                   <div>
                     <div className="text-xs uppercase text-muted-foreground mb-1">
                       Joined
                     </div>
+
                     <div>
-                      {new Date(selected.joined).toLocaleString()}
+                      {new Date(
+                        selected.joined
+                      ).toLocaleString("en-IN")}
                     </div>
                   </div>
 
@@ -261,6 +420,7 @@ function CustomersPage() {
                     <div className="text-xs uppercase text-muted-foreground mb-1">
                       Customer ID
                     </div>
+
                     <div className="break-all">
                       {selected.id}
                     </div>
@@ -275,6 +435,7 @@ function CustomersPage() {
                       <div className="text-2xl font-bold">
                         {selected.addresses}
                       </div>
+
                       <div className="text-xs text-muted-foreground mt-1">
                         Addresses
                       </div>
@@ -286,6 +447,7 @@ function CustomersPage() {
                       <div className="text-2xl font-bold">
                         {selected.wishlist}
                       </div>
+
                       <div className="text-xs text-muted-foreground mt-1">
                         Wishlist
                       </div>
@@ -297,6 +459,7 @@ function CustomersPage() {
                       <div className="text-2xl font-bold">
                         {selected.cart}
                       </div>
+
                       <div className="text-xs text-muted-foreground mt-1">
                         Cart Items
                       </div>
@@ -306,7 +469,11 @@ function CustomersPage() {
                 </div>
 
                 <div className="flex justify-end pt-2 border-t">
-                  <Button onClick={() => setSelected(null)}>
+                  <Button
+                    onClick={() =>
+                      setSelected(null)
+                    }
+                  >
                     Close
                   </Button>
                 </div>
