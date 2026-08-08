@@ -77,7 +77,11 @@ type Ctx = {
   reels: Reel[];
   reelsLoading: boolean;
   loadReels: () => Promise<void>;
-  createReel: (data: Partial<Reel>, videoFile?: File | null) => Promise<void>;
+  createReel: (
+  data: Partial<Reel>,
+  videoFile?: File | null,
+  onProgress?: (progress: number) => void
+) => Promise<void>;
   updateReel: (id: string, data: Partial<Reel>) => Promise<void>;
   deleteReel: (id: string) => Promise<void>;
 };
