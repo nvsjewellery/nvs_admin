@@ -182,9 +182,7 @@ function uploadFileWithProgress(
       true
     );
 
-    /*
-     * Admin authentication uses cookies.
-     */
+    // Admin authentication uses cookies
     xhr.withCredentials = true;
 
     xhr.upload.onprogress = (event) => {
@@ -259,6 +257,74 @@ function uploadFileWithProgress(
 
     xhr.send(formData);
   });
+}
+
+async function uploadImagesWithProgress(
+  files: File[],
+  onProgress?: (progress: number) => void
+): Promise<{
+  success: boolean;
+  urls: string[];
+}> {
+  if (files.length === 0) {
+    return {
+      success: true,
+      urls: [],
+    };
+  }
+
+  if (files.length > 4) {
+    throw new Error(
+      "You can upload a maximum of 4 images"
+    );
+  }
+
+  const urls: string[] = [];
+
+  for (
+    let i = 0;
+    i < files.length;
+    i++
+  ) {
+    const file = files[i];
+
+    const result =
+      await uploadFileWithProgress(
+        file,
+        (fileProgress) => {
+          /*
+           * Convert individual file progress
+           * into overall progress.
+           *
+           * Example:
+           * File 1 = 100%
+           * File 2 = 50%
+           * File 3 = 0%
+           *
+           * Overall = 50%
+           */
+
+          const overallProgress = Math.round(
+            ((i * 100) +
+              fileProgress) /
+              files.length
+          );
+
+          onProgress?.(
+            overallProgress
+          );
+        }
+      );
+
+    urls.push(result.url);
+  }
+
+  onProgress?.(100);
+
+  return {
+    success: true,
+    urls,
+  };
 }
 
 /* =========================================================
@@ -369,19 +435,34 @@ export const adminApi = {
   ======================================================= */
 
   uploadImage: (
-    file: File,
-    onProgress?: (
-      progress: number
-    ) => void
-  ): Promise<{
-    success: boolean;
-    url: string;
-  }> => {
-    return uploadFileWithProgress(
-      file,
-      onProgress
-    );
-  },
+  file: File,
+  onProgress?: (
+    progress: number
+  ) => void
+): Promise<{
+  success: boolean;
+  url: string;
+}> => {
+  return uploadFileWithProgress(
+    file,
+    onProgress
+  );
+},
+
+uploadImages: (
+  files: File[],
+  onProgress?: (
+    progress: number
+  ) => void
+): Promise<{
+  success: boolean;
+  urls: string[];
+}> => {
+  return uploadImagesWithProgress(
+    files,
+    onProgress
+  );
+},
 
   /* =======================================================
      CATEGORIES

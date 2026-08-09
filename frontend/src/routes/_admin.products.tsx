@@ -1,8 +1,10 @@
+
 import { createFileRoute } from "@tanstack/react-router";
 import {
   useEffect,
   useRef,
   useState,
+  type ChangeEvent,
 } from "react";
 
 import { toast } from "sonner";
@@ -16,6 +18,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  X,
 } from "lucide-react";
 
 import {
@@ -97,7 +100,9 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export const Route = createFileRoute("/_admin/products")({
+export const Route = createFileRoute(
+  "/_admin/products"
+)({
   head: () => ({
     meta: [
       {
@@ -107,6 +112,10 @@ export const Route = createFileRoute("/_admin/products")({
   }),
   component: ProductsPage,
 });
+
+/* ============================================================
+   EMPTY PRODUCT DEFAULTS
+============================================================ */
 
 const EMPTY_GOLD: Partial<Product> = {
   metal: "Gold",
@@ -119,6 +128,8 @@ const EMPTY_GOLD: Partial<Product> = {
   stoneCost: 0,
   status: "Draft",
   image: "",
+  images: [],
+  stock: 0,
 };
 
 const EMPTY_SILVER: Partial<Product> = {
@@ -134,7 +145,19 @@ const EMPTY_SILVER: Partial<Product> = {
   pieceCost: 0,
   status: "Draft",
   image: "",
+  images: [],
+  stock: 0,
 };
+
+/* ============================================================
+   CONSTANTS
+============================================================ */
+
+const MAX_PRODUCT_IMAGES = 4;
+
+/* ============================================================
+   PRODUCTS PAGE
+============================================================ */
 
 function ProductsPage() {
   const {
@@ -163,6 +186,10 @@ function ProductsPage() {
   const [editing, setEditing] =
     useState<Partial<Product> | null>(null);
 
+  /* ==========================================================
+     FILTERED PRODUCTS
+  ========================================================== */
+
   const filtered = products.filter(
     (p) =>
       (metal === "all" ||
@@ -180,14 +207,14 @@ function ProductsPage() {
           .includes(q.toLowerCase()))
   );
 
-  // ============================================================
-  // SELECT ALL
-  // ============================================================
+  /* ==========================================================
+     SELECT ALL
+  ========================================================== */
 
   function toggleAll() {
     if (
-      selected.size ===
-      filtered.length
+      selected.size === filtered.length &&
+      filtered.length > 0
     ) {
       setSelected(new Set());
     } else {
@@ -199,9 +226,9 @@ function ProductsPage() {
     }
   }
 
-  // ============================================================
-  // BULK ACTION
-  // ============================================================
+  /* ==========================================================
+     BULK ACTION
+  ========================================================== */
 
   async function bulk(
     action:
@@ -209,6 +236,10 @@ function ProductsPage() {
       | "deactivate"
       | "delete"
   ) {
+    if (selected.size === 0) {
+      return;
+    }
+
     try {
       await bulkProductAction(
         Array.from(selected),
@@ -216,7 +247,13 @@ function ProductsPage() {
       );
 
       toast.success(
-        `${selected.size} products ${action}d`
+        `${selected.size} products ${
+          action === "delete"
+            ? "deleted"
+            : action === "activate"
+              ? "activated"
+              : "deactivated"
+        }`
       );
 
       setSelected(new Set());
@@ -229,9 +266,9 @@ function ProductsPage() {
     }
   }
 
-  // ============================================================
-  // DELETE
-  // ============================================================
+  /* ==========================================================
+     DELETE
+  ========================================================== */
 
   async function handleDelete(
     id: string
@@ -251,9 +288,9 @@ function ProductsPage() {
     }
   }
 
-  // ============================================================
-  // EXPORT EXCEL
-  // ============================================================
+  /* ==========================================================
+     EXPORT EXCEL
+  ========================================================== */
 
   function exportExcel() {
     if (filtered.length === 0) {
@@ -314,6 +351,13 @@ function ProductsPage() {
           p.isDirectSterling
             ? "Yes"
             : "No",
+
+        "Image Count":
+          Array.isArray(p.images)
+            ? p.images.length
+            : p.image
+              ? 1
+              : 0,
       })
     );
 
@@ -341,9 +385,9 @@ function ProductsPage() {
     );
   }
 
-  // ============================================================
-  // EXPORT PDF
-  // ============================================================
+  /* ==========================================================
+     EXPORT PDF
+  ========================================================== */
 
   function exportPdf() {
     if (filtered.length === 0) {
@@ -428,6 +472,10 @@ function ProductsPage() {
     );
   }
 
+  /* ==========================================================
+     RENDER
+  ========================================================== */
+
   return (
     <>
       <PageHeader
@@ -435,6 +483,7 @@ function ProductsPage() {
         description={`${products.length} products across Gold and Silver categories.`}
         actions={
           <div className="flex items-center gap-2">
+
             {/* EXPORT */}
 
             <DropdownMenu>
@@ -448,6 +497,7 @@ function ProductsPage() {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end">
+
                 <DropdownMenuItem
                   onClick={exportExcel}
                 >
@@ -461,6 +511,7 @@ function ProductsPage() {
                   <FileText className="h-4 w-4 mr-2" />
                   Export as PDF
                 </DropdownMenuItem>
+
               </DropdownMenuContent>
             </DropdownMenu>
 
@@ -469,19 +520,23 @@ function ProductsPage() {
             <Button
               className="bg-gold text-gold-foreground hover:bg-gold/90"
               onClick={() =>
-                setEditing(
-                  EMPTY_GOLD
-                )
+                setEditing({
+                  ...EMPTY_GOLD,
+                  images: [],
+                })
               }
             >
               <Plus className="h-4 w-4 mr-1" />
               Add Product
             </Button>
+
           </div>
         }
       />
 
-      {/* FILTERS */}
+      {/* ========================================================
+          FILTERS
+      ======================================================== */}
 
       <Card className="mb-4">
         <CardContent className="p-4 flex flex-wrap gap-3 items-center">
@@ -510,6 +565,7 @@ function ProductsPage() {
             </SelectTrigger>
 
             <SelectContent>
+
               <SelectItem value="all">
                 All metals
               </SelectItem>
@@ -521,6 +577,7 @@ function ProductsPage() {
               <SelectItem value="Silver">
                 Silver
               </SelectItem>
+
             </SelectContent>
           </Select>
 
@@ -533,6 +590,7 @@ function ProductsPage() {
             </SelectTrigger>
 
             <SelectContent>
+
               <SelectItem value="all">
                 All categories
               </SelectItem>
@@ -551,6 +609,7 @@ function ProductsPage() {
                   {c}
                 </SelectItem>
               ))}
+
             </SelectContent>
           </Select>
 
@@ -563,6 +622,7 @@ function ProductsPage() {
             </SelectTrigger>
 
             <SelectContent>
+
               <SelectItem value="all">
                 All statuses
               </SelectItem>
@@ -578,6 +638,7 @@ function ProductsPage() {
               <SelectItem value="Draft">
                 Draft
               </SelectItem>
+
             </SelectContent>
           </Select>
 
@@ -624,7 +685,9 @@ function ProductsPage() {
         </CardContent>
       </Card>
 
-      {/* TABLE */}
+      {/* ========================================================
+          PRODUCTS TABLE
+      ======================================================== */}
 
       <Card>
         <CardContent className="p-0">
@@ -641,6 +704,7 @@ function ProductsPage() {
             <Table>
 
               <TableHeader>
+
                 <TableRow>
 
                   <TableHead className="w-10">
@@ -692,6 +756,7 @@ function ProductsPage() {
                   </TableHead>
 
                 </TableRow>
+
               </TableHeader>
 
               <TableBody>
@@ -749,6 +814,16 @@ function ProductsPage() {
                             {p.sku}
                           </div>
 
+                          {Array.isArray(
+                            p.images
+                          ) &&
+                            p.images.length >
+                              1 && (
+                              <div className="text-[10px] text-muted-foreground">
+                                {p.images.length} photos
+                              </div>
+                            )}
+
                         </div>
 
                       </div>
@@ -756,6 +831,7 @@ function ProductsPage() {
                     </TableCell>
 
                     <TableCell>
+
                       <span
                         className={
                           p.metal === "Gold"
@@ -765,6 +841,7 @@ function ProductsPage() {
                       >
                         {p.metal}
                       </span>
+
                     </TableCell>
 
                     <TableCell className="text-sm">
@@ -816,6 +893,7 @@ function ProductsPage() {
                     </TableCell>
 
                     <TableCell className="tabular-nums font-medium">
+
                       {inr(
                         p.livePrice ??
                           productTotal(
@@ -823,6 +901,7 @@ function ProductsPage() {
                             rates
                           )
                       )}
+
                     </TableCell>
 
                     <TableCell
@@ -912,6 +991,10 @@ function ProductsPage() {
         </CardContent>
       </Card>
 
+      {/* ========================================================
+          PRODUCT SHEET
+      ======================================================== */}
+
       <ProductSheet
         product={editing}
         onClose={() =>
@@ -922,9 +1005,9 @@ function ProductsPage() {
   );
 }
 
-// ============================================================
-// PRODUCT SHEET
-// ============================================================
+/* ============================================================
+   PRODUCT SHEET
+============================================================ */
 
 function ProductSheet({
   product,
@@ -945,11 +1028,19 @@ function ProductSheet({
       product
     );
 
-  const [pendingFile, setPendingFile] =
-    useState<File | null>(null);
+  /* ==========================================================
+     NEW FILES
+  ========================================================== */
 
-  const [previewUrl, setPreviewUrl] =
-    useState<string | null>(null);
+  const [pendingFiles, setPendingFiles] =
+    useState<File[]>([]);
+
+  /* ==========================================================
+     PREVIEW URLS
+  ========================================================== */
+
+  const [previewUrls, setPreviewUrls] =
+    useState<string[]>([]);
 
   const [saving, setSaving] =
     useState(false);
@@ -957,15 +1048,77 @@ function ProductSheet({
   const fileInputRef =
     useRef<HTMLInputElement>(null);
 
+  /* ==========================================================
+     RESET WHEN PRODUCT CHANGES
+  ========================================================== */
+
   useEffect(() => {
     setP(product);
-    setPendingFile(null);
-    setPreviewUrl(null);
+    setPendingFiles([]);
+
+    setPreviewUrls((current) => {
+      current.forEach((url) =>
+        URL.revokeObjectURL(url)
+      );
+
+      return [];
+    });
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }, [product]);
+
+  /* ==========================================================
+     CLEANUP ON UNMOUNT
+  ========================================================== */
+
+  useEffect(() => {
+    return () => {
+      previewUrls.forEach((url) =>
+        URL.revokeObjectURL(url)
+      );
+    };
+  }, [previewUrls]);
 
   if (!p) {
     return null;
   }
+
+  /* ==========================================================
+     EXISTING IMAGES
+  ========================================================== */
+
+  const existingImages =
+    Array.isArray(p.images)
+      ? p.images.filter(
+          (
+            image
+          ): image is string =>
+            typeof image === "string" &&
+            image.trim().length > 0
+        )
+      : p.image
+        ? [p.image]
+        : [];
+
+  const limitedExistingImages =
+    existingImages.slice(
+      0,
+      MAX_PRODUCT_IMAGES
+    );
+
+  /* ==========================================================
+     TOTAL IMAGE COUNT
+  ========================================================== */
+
+  const totalImageCount =
+    limitedExistingImages.length +
+    pendingFiles.length;
+
+  /* ==========================================================
+     PRICE CALCULATIONS
+  ========================================================== */
 
   const net = Math.max(
     0,
@@ -1036,25 +1189,139 @@ function ProductSheet({
           "92.5",
         ];
 
-  function handleFileSelect(
-    e: React.ChangeEvent<HTMLInputElement>
-  ) {
-    const file =
-      e.target.files?.[0];
+  /* ==========================================================
+     FILE SELECT
+  ========================================================== */
 
-    if (!file) {
+  function handleFileSelect(
+    e: ChangeEvent<HTMLInputElement>
+  ) {
+    const files = Array.from(
+      e.target.files ?? []
+    );
+
+    if (files.length === 0) {
       return;
     }
 
-    setPendingFile(file);
+    const remainingSlots =
+      MAX_PRODUCT_IMAGES -
+      limitedExistingImages.length;
 
-    setPreviewUrl(
-      URL.createObjectURL(file)
+    if (remainingSlots <= 0) {
+      toast.error(
+        `Maximum ${MAX_PRODUCT_IMAGES} images allowed`
+      );
+
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+
+      return;
+    }
+
+    const filesToAdd =
+      files.slice(
+        0,
+        remainingSlots
+      );
+
+    if (
+      files.length >
+      remainingSlots
+    ) {
+      toast.warning(
+        `Only ${remainingSlots} more image${
+          remainingSlots === 1
+            ? ""
+            : "s"
+        } can be added`
+      );
+    }
+
+    const newPreviewUrls =
+      filesToAdd.map((file) =>
+        URL.createObjectURL(file)
+      );
+
+    setPendingFiles((current) =>
+      [
+        ...current,
+        ...filesToAdd,
+      ].slice(
+        0,
+        remainingSlots
+      )
     );
+
+    setPreviewUrls((current) =>
+      [
+        ...current,
+        ...newPreviewUrls,
+      ].slice(
+        0,
+        remainingSlots
+      )
+    );
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
   }
+
+  /* ==========================================================
+     REMOVE PENDING FILE
+  ========================================================== */
+
+  function removePendingFile(
+    index: number
+  ) {
+    setPendingFiles((current) =>
+      current.filter(
+        (_, i) => i !== index
+      )
+    );
+
+    setPreviewUrls((current) => {
+      const url = current[index];
+
+      if (url) {
+        URL.revokeObjectURL(url);
+      }
+
+      return current.filter(
+        (_, i) => i !== index
+      );
+    });
+  }
+
+  /* ==========================================================
+     HANDLE SAVE
+  ========================================================== */
 
   async function handleSave() {
     if (!p) {
+      return;
+    }
+
+    if (!p.name?.trim()) {
+      toast.error(
+        "Product name is required"
+      );
+      return;
+    }
+
+    if (!p.category?.trim()) {
+      toast.error(
+        "Please select a category"
+      );
+      return;
+    }
+
+    if (!p.sku?.trim() && p.id) {
+      toast.error(
+        "SKU is required when editing a product"
+      );
       return;
     }
 
@@ -1063,7 +1330,7 @@ function ProductSheet({
     try {
       const finalSku =
         p.sku?.trim()
-          ? p.sku
+          ? p.sku.trim()
           : `NVS-${
               p.metal === "Gold"
                 ? "G"
@@ -1076,20 +1343,24 @@ function ProductSheet({
                 Math.random() *
                   9999
               )
-            ).padStart(4, "0")}`;
+            ).padStart(
+              4,
+              "0"
+            )}`;
 
-      const payload = {
-        ...p,
-        sku: finalSku,
-        gstRate:
-          gstPercentage,
-      };
+      const payload: Partial<Product> =
+        {
+          ...p,
+          sku: finalSku,
+          gstRate:
+            gstPercentage,
+        };
 
       if (p.id) {
         await updateProduct(
           p.id,
           payload,
-          pendingFile
+          pendingFiles
         );
 
         toast.success(
@@ -1098,7 +1369,7 @@ function ProductSheet({
       } else {
         await createProduct(
           payload,
-          pendingFile
+          pendingFiles
         );
 
         toast.success(
@@ -1118,8 +1389,9 @@ function ProductSheet({
     }
   }
 
-  const displayImage =
-    previewUrl ?? p.image;
+  /* ==========================================================
+     RENDER
+  ========================================================== */
 
   return (
     <Sheet
@@ -1131,6 +1403,7 @@ function ProductSheet({
       <SheetContent className="w-full sm:max-w-2xl overflow-y-auto">
 
         <SheetHeader>
+
           <SheetTitle>
             {p.id
               ? "Edit Product"
@@ -1140,13 +1413,17 @@ function ProductSheet({
           <SheetDescription>
             Fields adapt to the selected metal type.
           </SheetDescription>
+
         </SheetHeader>
 
         <div className="p-4 space-y-4">
 
-          {/* METAL */}
+          {/* ==================================================
+              METAL TYPE
+          ================================================== */}
 
           <div>
+
             <Label>
               Metal Type
             </Label>
@@ -1194,6 +1471,7 @@ function ProductSheet({
                       : "hover:bg-muted"
                   }`}
                 >
+
                   <div className="font-medium">
                     {m}
                   </div>
@@ -1203,17 +1481,24 @@ function ProductSheet({
                       ? "9K–22K purity, weight-based"
                       : "75–92.5 purity, sterling option"}
                   </div>
+
                 </button>
               ))}
 
             </div>
+
           </div>
 
-          {/* BASIC DETAILS */}
+          {/* ==================================================
+              BASIC DETAILS
+          ================================================== */}
 
           <div className="grid grid-cols-2 gap-3">
 
+            {/* PRODUCT NAME */}
+
             <div className="col-span-2">
+
               <Label>
                 Product Name
               </Label>
@@ -1228,9 +1513,13 @@ function ProductSheet({
                   })
                 }
               />
+
             </div>
 
+            {/* DESCRIPTION */}
+
             <div className="col-span-2">
+
               <Label>
                 Description
               </Label>
@@ -1248,6 +1537,7 @@ function ProductSheet({
                   })
                 }
               />
+
             </div>
 
             {/* SILVER PURITY */}
@@ -1255,12 +1545,16 @@ function ProductSheet({
             {p.metal ===
               "Silver" && (
               <div>
+
                 <Label>
                   Purity
                 </Label>
 
                 <Select
-                  value={p.purity}
+                  value={
+                    p.purity ??
+                    "92.5"
+                  }
                   onValueChange={(v) =>
                     setP({
                       ...p,
@@ -1272,11 +1566,13 @@ function ProductSheet({
                     })
                   }
                 >
+
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
 
                   <SelectContent>
+
                     {purities.map(
                       (x) => (
                         <SelectItem
@@ -1287,14 +1583,18 @@ function ProductSheet({
                         </SelectItem>
                       )
                     )}
+
                   </SelectContent>
+
                 </Select>
+
               </div>
             )}
 
             {/* CATEGORY */}
 
             <div>
+
               <Label>
                 Category
               </Label>
@@ -1308,7 +1608,8 @@ function ProductSheet({
               ) : (
                 <Select
                   value={
-                    p.category
+                    p.category ??
+                    ""
                   }
                   onValueChange={(v) =>
                     setP({
@@ -1317,11 +1618,13 @@ function ProductSheet({
                     })
                   }
                 >
+
                   <SelectTrigger>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
 
                   <SelectContent>
+
                     {cats.map(
                       (c) => (
                         <SelectItem
@@ -1332,9 +1635,12 @@ function ProductSheet({
                         </SelectItem>
                       )
                     )}
+
                   </SelectContent>
+
                 </Select>
               )}
+
             </div>
 
             {/* GOLD PURITY */}
@@ -1342,12 +1648,16 @@ function ProductSheet({
             {p.metal ===
               "Gold" && (
               <div>
+
                 <Label>
                   Carat / Purity
                 </Label>
 
                 <Select
-                  value={p.purity}
+                  value={
+                    p.purity ??
+                    "22K"
+                  }
                   onValueChange={(v) =>
                     setP({
                       ...p,
@@ -1355,11 +1665,13 @@ function ProductSheet({
                     })
                   }
                 >
+
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
 
                   <SelectContent>
+
                     {purities.map(
                       (x) => (
                         <SelectItem
@@ -1370,80 +1682,167 @@ function ProductSheet({
                         </SelectItem>
                       )
                     )}
+
                   </SelectContent>
+
                 </Select>
+
               </div>
             )}
 
-            {/* PHOTOS */}
+            {/* =================================================
+                PHOTOS
+            ================================================= */}
 
             <div className="col-span-2">
 
-              <Label>
-                Photos
-              </Label>
+              <div className="flex items-center justify-between">
 
-              <div className="mt-1 flex gap-2 flex-wrap items-center">
+                <Label>
+                  Photos
+                </Label>
 
-                {displayImage && (
-                  <div className="h-20 w-20 rounded-md overflow-hidden border relative">
-
-                    <img
-                      src={
-                        displayImage
-                      }
-                      alt=""
-                      className="h-full w-full object-cover"
-                    />
-
-                    <Badge className="absolute top-1 left-1 bg-gold text-gold-foreground text-[9px] px-1 h-4">
-                      {pendingFile
-                        ? "New"
-                        : "Primary"}
-                    </Badge>
-
-                  </div>
-                )}
-
-                <input
-                  ref={
-                    fileInputRef
-                  }
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={
-                    handleFileSelect
-                  }
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    fileInputRef.current?.click()
-                  }
-                  className="h-20 w-20 rounded-md border-2 border-dashed grid place-items-center text-xs text-muted-foreground hover:bg-muted"
-                >
-                  + Upload
-                </button>
+                <span className="text-xs text-muted-foreground">
+                  {totalImageCount}/
+                  {MAX_PRODUCT_IMAGES}
+                </span>
 
               </div>
 
-              {pendingFile && (
+              <div className="mt-2 grid grid-cols-4 gap-3">
+
+                {/* EXISTING IMAGES */}
+
+                {limitedExistingImages.map(
+                  (
+                    image,
+                    index
+                  ) => (
+                    <div
+                      key={`${image}-${index}`}
+                      className="relative aspect-square rounded-md overflow-hidden border bg-muted"
+                    >
+
+                      <img
+                        src={image}
+                        alt={`${p.name ?? "Product"} ${
+                          index + 1
+                        }`}
+                        className="h-full w-full object-cover"
+                      />
+
+                      {index ===
+                        0 && (
+                        <Badge className="absolute top-1 left-1 bg-gold text-gold-foreground text-[9px] px-1 h-4">
+                          Primary
+                        </Badge>
+                      )}
+
+                    </div>
+                  )
+                )}
+
+                {/* NEW PREVIEWS */}
+
+                {previewUrls.map(
+                  (
+                    url,
+                    index
+                  ) => (
+                    <div
+                      key={url}
+                      className="relative aspect-square rounded-md overflow-hidden border bg-muted"
+                    >
+
+                      <img
+                        src={url}
+                        alt={`New product image ${
+                          index + 1
+                        }`}
+                        className="h-full w-full object-cover"
+                      />
+
+                      <Badge className="absolute top-1 left-1 bg-gold text-gold-foreground text-[9px] px-1 h-4">
+                        New
+                      </Badge>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          removePendingFile(
+                            index
+                          )
+                        }
+                        className="absolute top-1 right-1 h-5 w-5 rounded-full bg-black/70 text-white grid place-items-center hover:bg-black"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+
+                    </div>
+                  )
+                )}
+
+                {/* UPLOAD BUTTON */}
+
+                {totalImageCount <
+                  MAX_PRODUCT_IMAGES && (
+                  <>
+                    <input
+                      ref={
+                        fileInputRef
+                      }
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={
+                        handleFileSelect
+                      }
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        fileInputRef.current?.click()
+                      }
+                      className="aspect-square rounded-md border-2 border-dashed grid place-items-center text-xs text-muted-foreground hover:bg-muted"
+                    >
+                      <div className="text-center">
+                        <Plus className="h-5 w-5 mx-auto mb-1" />
+                        Add Photos
+                      </div>
+                    </button>
+                  </>
+                )}
+
+              </div>
+
+              <p className="text-xs text-muted-foreground mt-2">
+                Maximum {MAX_PRODUCT_IMAGES} images per product.
+                The first image is used as the primary image.
+              </p>
+
+              {pendingFiles.length > 0 && (
                 <p className="text-xs text-muted-foreground mt-1">
-                  Will upload on save:{" "}
-                  {pendingFile.name}
+                  {pendingFiles.length} new image
+                  {pendingFiles.length === 1
+                    ? ""
+                    : "s"}{" "}
+                  will be uploaded when you save.
                 </p>
               )}
 
             </div>
 
-            {/* DIRECT STERLING */}
+            {/* =================================================
+                DIRECT STERLING
+            ================================================= */}
 
             {isSilverSterlingAllowed && (
               <div className="col-span-2 flex items-center justify-between rounded-md border p-3 bg-muted/30">
 
                 <div>
+
                   <Label>
                     Direct Sterling (fixed piece price)?
                   </Label>
@@ -1451,6 +1850,7 @@ function ProductSheet({
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Bypasses rate-based pricing entirely.
                   </p>
+
                 </div>
 
                 <Switch
@@ -1472,7 +1872,9 @@ function ProductSheet({
               </div>
             )}
 
-            {/* PIECE COST */}
+            {/* =================================================
+                PIECE COST
+            ================================================= */}
 
             {p.metal ===
               "Silver" &&
@@ -1503,11 +1905,15 @@ function ProductSheet({
                 </div>
               )}
 
-            {/* WEIGHT FIELDS */}
+            {/* =================================================
+                WEIGHT FIELDS
+            ================================================= */}
 
             {showWeightFields && (
               <>
+
                 <div>
+
                   <Label>
                     {p.metal ===
                     "Gold"
@@ -1518,6 +1924,7 @@ function ProductSheet({
                   <Input
                     type="number"
                     step="0.01"
+                    min="0"
                     value={
                       p.grossWeight ??
                       0
@@ -1532,9 +1939,11 @@ function ProductSheet({
                       })
                     }
                   />
+
                 </div>
 
                 <div>
+
                   <Label>
                     Stone Weight (g)
                   </Label>
@@ -1542,6 +1951,7 @@ function ProductSheet({
                   <Input
                     type="number"
                     step="0.01"
+                    min="0"
                     value={
                       p.stoneWeight ??
                       0
@@ -1556,15 +1966,18 @@ function ProductSheet({
                       })
                     }
                   />
+
                 </div>
 
                 <div>
+
                   <Label>
                     Stone Cost (₹)
                   </Label>
 
                   <Input
                     type="number"
+                    min="0"
                     value={
                       p.stoneCost ??
                       0
@@ -1579,9 +1992,11 @@ function ProductSheet({
                       })
                     }
                   />
+
                 </div>
 
                 <div>
+
                   <Label>
                     Net Weight (g) — auto
                   </Label>
@@ -1593,9 +2008,11 @@ function ProductSheet({
                     )}
                     className="bg-muted"
                   />
+
                 </div>
 
                 <div>
+
                   <Label>
                     VA / Making Charges (%)
                   </Label>
@@ -1603,6 +2020,7 @@ function ProductSheet({
                   <Input
                     type="number"
                     step="0.5"
+                    min="0"
                     value={
                       p.va ?? 0
                     }
@@ -1615,9 +2033,11 @@ function ProductSheet({
                       })
                     }
                   />
+
                 </div>
 
                 <div>
+
                   <Label>
                     GST (%)
                   </Label>
@@ -1625,6 +2045,7 @@ function ProductSheet({
                   <Input
                     type="number"
                     step="0.1"
+                    min="0"
                     value={
                       p.gstRate ??
                       3
@@ -1639,15 +2060,20 @@ function ProductSheet({
                       })
                     }
                   />
+
                 </div>
+
               </>
             )}
 
-            {/* HALLMARK */}
+            {/* =================================================
+                HALLMARK
+            ================================================= */}
 
             {p.metal ===
               "Gold" && (
               <div>
+
                 <Label>
                   Hallmark / Archive ID
                 </Label>
@@ -1665,12 +2091,16 @@ function ProductSheet({
                     })
                   }
                 />
+
               </div>
             )}
 
-            {/* SKU */}
+            {/* =================================================
+                SKU
+            ================================================= */}
 
             <div>
+
               <Label>
                 Item Code / SKU
               </Label>
@@ -1686,15 +2116,7 @@ function ProductSheet({
                 }${
                   p.category?.[0] ??
                   "X"
-                }-${String(
-                  Math.floor(
-                    Math.random() *
-                      9999
-                  )
-                ).padStart(
-                  4,
-                  "0"
-                )}`}
+                }-XXXX`}
                 onChange={(e) =>
                   setP({
                     ...p,
@@ -1703,17 +2125,22 @@ function ProductSheet({
                   })
                 }
               />
+
             </div>
 
-            {/* STOCK */}
+            {/* =================================================
+                STOCK
+            ================================================= */}
 
             <div>
+
               <Label>
                 Stock
               </Label>
 
               <Input
                 type="number"
+                min="0"
                 value={
                   p.stock ?? 0
                 }
@@ -1727,9 +2154,12 @@ function ProductSheet({
                   })
                 }
               />
+
             </div>
 
-            {/* STATUS */}
+            {/* =================================================
+                STATUS
+            ================================================= */}
 
             <div className="col-span-2">
 
@@ -1738,7 +2168,10 @@ function ProductSheet({
               </Label>
 
               <Select
-                value={p.status}
+                value={
+                  p.status ??
+                  "Draft"
+                }
                 onValueChange={(v) =>
                   setP({
                     ...p,
@@ -1747,11 +2180,13 @@ function ProductSheet({
                   })
                 }
               >
+
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
 
                 <SelectContent>
+
                   <SelectItem value="Draft">
                     Draft
                   </SelectItem>
@@ -1763,14 +2198,18 @@ function ProductSheet({
                   <SelectItem value="Inactive">
                     Inactive
                   </SelectItem>
+
                 </SelectContent>
+
               </Select>
 
             </div>
 
           </div>
 
-          {/* PRICE PREVIEW */}
+          {/* ==================================================
+              PRICE PREVIEW
+          ================================================== */}
 
           <div className="rounded-md border border-gold/40 bg-gold/5 p-4">
 
@@ -1869,11 +2308,16 @@ function ProductSheet({
 
         </div>
 
+        {/* ======================================================
+            FOOTER
+        ====================================================== */}
+
         <SheetFooter className="p-4 border-t">
 
           <Button
             variant="outline"
             onClick={onClose}
+            disabled={saving}
           >
             Cancel
           </Button>
@@ -1897,9 +2341,9 @@ function ProductSheet({
   );
 }
 
-// ============================================================
-// PRICE ROW
-// ============================================================
+/* ============================================================
+   PRICE ROW
+============================================================ */
 
 function Row({
   k,
@@ -1918,6 +2362,7 @@ function Row({
           : ""
       }`}
     >
+
       <span className="text-muted-foreground">
         {k}
       </span>
@@ -1931,6 +2376,7 @@ function Row({
       >
         {v}
       </span>
+
     </div>
   );
 }

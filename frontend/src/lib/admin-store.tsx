@@ -37,14 +37,10 @@ export type DiscountKind =
   | "percent"
   | "flat";
 
-/*
- * Discount stored in frontend state.
- *
- * IMPORTANT:
- * There is NO "scope" field anymore.
- *
- * Every discount is applied ONLY to VA / making charges.
- */
+/* =========================================================
+   DISCOUNT
+========================================================= */
+
 export type Discount = {
   id: string;
 
@@ -91,9 +87,7 @@ export type CreateDiscountInput = {
 
   /*
    * For COUPON:
-   * The backend now generates the code automatically.
-   *
-   * Therefore the frontend does NOT need to send a code.
+   * Backend generates the coupon code.
    */
   code?: string | null;
 
@@ -104,7 +98,8 @@ export type CreateDiscountInput = {
   kind: DiscountKind;
 
   /*
-   * ALWAYS represents discount against VA.
+   * Always represents discount against
+   * VA / making charges.
    */
   value: number;
 
@@ -166,6 +161,12 @@ export type Reel = {
 };
 
 /* =========================================================
+   PRODUCT IMAGE LIMIT
+========================================================= */
+
+const MAX_PRODUCT_IMAGES = 4;
+
+/* =========================================================
    CONTEXT TYPE
 ========================================================= */
 
@@ -198,13 +199,13 @@ type Ctx = {
 
   createProduct: (
     p: Partial<Product>,
-    imageFile?: File | null
+    imageFiles?: File[] | null
   ) => Promise<void>;
 
   updateProduct: (
     id: string,
     p: Partial<Product>,
-    imageFile?: File | null
+    imageFiles?: File[] | null
   ) => Promise<void>;
 
   deleteProduct: (
@@ -229,20 +230,10 @@ type Ctx = {
 
   loadDiscounts: () => Promise<void>;
 
-  /*
-   * IMPORTANT:
-   * addDiscount returns the newly created Discount.
-   *
-   * This is required because the coupon code is generated
-   * by the backend and returned after creation.
-   */
   addDiscount: (
     discount: CreateDiscountInput
   ) => Promise<Discount>;
 
-  /*
-   * updateDiscount also returns the updated Discount.
-   */
   updateDiscount: (
     id: string,
     discount: UpdateDiscountInput
@@ -411,66 +402,76 @@ export function AdminProvider({
      RATES
   ======================================================= */
 
-  const setRates = (r: Rates) => {
-    setRatesRaw(r);
+  const setRates = useCallback(
+    (r: Rates) => {
+      setRatesRaw(r);
 
-    setLastUpdated(
-      new Date()
-        .toISOString()
-        .slice(0, 16)
-        .replace("T", " ")
-    );
-  };
+      setLastUpdated(
+        new Date()
+          .toISOString()
+          .slice(0, 16)
+          .replace("T", " ")
+      );
+    },
+    []
+  );
 
   /* =======================================================
      ADMIN LOGIN
   ======================================================= */
 
-  const loginAdmin = async (
-    email: string,
-    password: string
-  ) => {
-    const res =
-      await adminApi.login(
-        email,
-        password
-      );
+  const loginAdmin = useCallback(
+    async (
+      email: string,
+      password: string
+    ) => {
+      const res =
+        await adminApi.login(
+          email,
+          password
+        );
 
-    if (res.admin) {
-      setAdminUser(res.admin);
-    }
-  };
+      if (res.admin) {
+        setAdminUser(res.admin);
+      }
+    },
+    []
+  );
 
   /* =======================================================
      ADMIN LOGOUT
   ======================================================= */
 
-  const logoutAdmin = async () => {
-    try {
-      await adminApi.logout();
-    } finally {
-      setAdminUser(null);
-    }
-  };
+  const logoutAdmin = useCallback(
+    async () => {
+      try {
+        await adminApi.logout();
+      } finally {
+        setAdminUser(null);
+      }
+    },
+    []
+  );
 
   /* =======================================================
      CHECK ADMIN AUTH
   ======================================================= */
 
-  const checkAdminAuth = async () => {
-    try {
-      const res =
-        await adminApi.getMe();
+  const checkAdminAuth =
+    useCallback(async () => {
+      try {
+        const res =
+          await adminApi.getMe();
 
-      setAdminUser(
-        res.admin ?? null
-      );
-    } catch {
-      setAdminUser(null);
-    } finally {
-      setAuthChecked(true);
-    }
-  };
+        setAdminUser(
+          res.admin ?? null
+        );
+      } catch {
+        setAdminUser(null);
+      } finally {
+        setAuthChecked(true);
+      }
+    }, []);
 
   /* =======================================================
      LOAD DISCOUNTS
@@ -509,15 +510,6 @@ export function AdminProvider({
       async (
         discount: CreateDiscountInput
       ): Promise<Discount> => {
-        /*
-         * No "scope" field exists.
-         *
-         * kind + value represent the VA discount.
-         *
-         * For COUPON discounts, the backend is
-         * responsible for generating a unique code.
-         */
-
         const payload: CreateDiscountInput = {
           ...discount,
         };
@@ -527,37 +519,13 @@ export function AdminProvider({
             payload
           );
 
-        /*
-         * The backend returns:
-         *
-         * {
-         *   success: true,
-         *   discount: {...}
-         * }
-         */
-
         const createdDiscount =
           res.discount as Discount;
-
-        /*
-         * Add the newly created discount
-         * to the beginning of the list.
-         */
 
         setDiscounts((current) => [
           createdDiscount,
           ...current,
         ]);
-
-        /*
-         * IMPORTANT:
-         *
-         * Return the created discount.
-         *
-         * This allows admin-discounts.tsx to access:
-         *
-         * createdDiscount.code
-         */
 
         return createdDiscount;
       },
@@ -624,6 +592,78 @@ export function AdminProvider({
     );
 
   /* =======================================================
+     NORMALIZE PRODUCT
+  ======================================================= */
+
+  const normalizeProduct =
+    useCallback(
+      (
+        product: Product
+      ): Product => {
+        let images: string[] = [];
+
+        /*
+         * Prefer the new images[] field.
+         */
+        if (
+          Array.isArray(
+            product.images
+          )
+        ) {
+          images =
+            product.images.filter(
+              (
+                image
+              ): image is string =>
+                typeof image ===
+                  "string" &&
+                image.trim()
+                  .length > 0
+            );
+        }
+
+        /*
+         * Backward compatibility
+         * with old products.
+         */
+        if (
+          images.length === 0 &&
+          typeof product.image ===
+            "string" &&
+          product.image.trim()
+            .length > 0
+        ) {
+          images = [
+            product.image.trim(),
+          ];
+        }
+
+        /*
+         * Hard maximum of 4 images.
+         */
+        images = images.slice(
+          0,
+          MAX_PRODUCT_IMAGES
+        );
+
+        return {
+          ...product,
+
+          images,
+
+          /*
+           * First gallery image is
+           * always the primary image.
+           */
+          image:
+            images[0] ??
+            "",
+        };
+      },
+      []
+    );
+
+  /* =======================================================
      LOAD PRODUCTS
   ======================================================= */
 
@@ -635,8 +675,23 @@ export function AdminProvider({
         const res =
           await adminApi.getProducts();
 
+        const backendProducts =
+          Array.isArray(
+            res.products
+          )
+            ? res.products
+            : [];
+
+        const normalizedProducts =
+          backendProducts.map(
+            (product: Product) =>
+              normalizeProduct(
+                product
+              )
+          );
+
         setProducts(
-          res.products ?? []
+          normalizedProducts
         );
       } catch (err) {
         console.error(
@@ -648,7 +703,7 @@ export function AdminProvider({
       } finally {
         setProductsLoading(false);
       }
-    }, []);
+    }, [normalizeProduct]);
 
   /* =======================================================
      LOAD CATEGORIES
@@ -663,7 +718,11 @@ export function AdminProvider({
           await adminApi.getCategories();
 
         setCategories(
-          res.categories ?? []
+          Array.isArray(
+            res.categories
+          )
+            ? res.categories
+            : []
         );
       } catch (err) {
         console.error(
@@ -690,7 +749,11 @@ export function AdminProvider({
           await adminApi.getReels();
 
         setReels(
-          res.reels ?? []
+          Array.isArray(
+            res.reels
+          )
+            ? res.reels
+            : []
         );
       } catch (err) {
         console.error(
@@ -711,10 +774,10 @@ export function AdminProvider({
       return;
     }
 
-    loadProducts();
-    loadCategories();
-    loadDiscounts();
-    loadReels();
+    void loadProducts();
+    void loadCategories();
+    void loadDiscounts();
+    void loadReels();
   }, [
     adminUser,
     loadProducts,
@@ -724,307 +787,629 @@ export function AdminProvider({
   ]);
 
   /* =======================================================
+     UPLOAD PRODUCT IMAGES
+  ======================================================= */
+
+  const uploadProductImages =
+    useCallback(
+      async (
+        files: File[]
+      ): Promise<string[]> => {
+        if (!files.length) {
+          return [];
+        }
+
+        if (
+          files.length >
+          MAX_PRODUCT_IMAGES
+        ) {
+          throw new Error(
+            `A product can have a maximum of ${MAX_PRODUCT_IMAGES} images`
+          );
+        }
+
+        const uploadedUrls: string[] =
+          [];
+
+        /*
+         * Upload sequentially.
+         *
+         * This works with the current
+         * single-file upload endpoint.
+         */
+        for (const file of files) {
+          const uploadRes =
+            await adminApi.uploadImage(
+              file
+            );
+
+          if (
+            uploadRes?.url &&
+            typeof uploadRes.url ===
+              "string"
+          ) {
+            uploadedUrls.push(
+              uploadRes.url
+            );
+          }
+        }
+
+        return uploadedUrls;
+      },
+      []
+    );
+
+  /* =======================================================
+     GET EXISTING PRODUCT IMAGES
+  ======================================================= */
+
+  const getExistingProductImages =
+    useCallback(
+      (
+        p: Partial<Product>
+      ): string[] => {
+        let images: string[] = [];
+
+        if (
+          Array.isArray(
+            p.images
+          )
+        ) {
+          images =
+            p.images.filter(
+              (
+                image
+              ): image is string =>
+                typeof image ===
+                  "string" &&
+                image.trim()
+                  .length > 0
+            );
+        }
+
+        /*
+         * Backward compatibility
+         * with old single-image products.
+         */
+        if (
+          images.length === 0 &&
+          typeof p.image ===
+            "string" &&
+          p.image.trim().length > 0
+        ) {
+          images = [
+            p.image.trim(),
+          ];
+        }
+
+        return images.slice(
+          0,
+          MAX_PRODUCT_IMAGES
+        );
+      },
+      []
+    );
+
+  /* =======================================================
+     BUILD PRODUCT IMAGE DATA
+  ======================================================= */
+
+  const buildProductImageData =
+    useCallback(
+      (
+        p: Partial<Product>,
+        uploadedImages: string[],
+        appendToExisting: boolean
+      ) => {
+        const existingImages =
+          getExistingProductImages(
+            p
+          );
+
+        let images: string[];
+
+        if (
+          uploadedImages.length ===
+          0
+        ) {
+          /*
+           * No new files:
+           * preserve existing gallery.
+           */
+          images = existingImages;
+        } else if (
+          appendToExisting
+        ) {
+          /*
+           * Editing an existing product:
+           *
+           * New uploaded images become
+           * primary images first, followed
+           * by existing images.
+           *
+           * Maximum 4 total.
+           */
+          images = [
+            ...uploadedImages,
+            ...existingImages,
+          ].slice(
+            0,
+            MAX_PRODUCT_IMAGES
+          );
+        } else {
+          /*
+           * Creating a new product:
+           * uploaded images are the
+           * complete gallery.
+           */
+          images =
+            uploadedImages.slice(
+              0,
+              MAX_PRODUCT_IMAGES
+            );
+        }
+
+        return {
+          images,
+          image:
+            images[0] ?? "",
+        };
+      },
+      [getExistingProductImages]
+    );
+
+  /* =======================================================
      CREATE PRODUCT
   ======================================================= */
 
-  const createProduct = async (
-    p: Partial<Product>,
-    imageFile?: File | null
-  ) => {
-    let imageUrl =
-      p.image ?? "";
+  const createProduct =
+    useCallback(
+      async (
+        p: Partial<Product>,
+        imageFiles?: File[] | null
+      ) => {
+        const files =
+          (imageFiles ?? []).slice(
+            0,
+            MAX_PRODUCT_IMAGES
+          );
 
-    if (imageFile) {
-      const uploadRes =
-        await adminApi.uploadImage(
-          imageFile
-        );
+        const uploadedImages =
+          await uploadProductImages(
+            files
+          );
 
-      imageUrl = uploadRes.url;
-    }
+        const imageData =
+          buildProductImageData(
+            p,
+            uploadedImages,
+            false
+          );
 
-    const res =
-      await adminApi.createProduct({
-        ...p,
-        image: imageUrl,
-      });
+        const res =
+          await adminApi.createProduct({
+            ...p,
 
-    setProducts((current) => [
-      res.product,
-      ...current,
-    ]);
-  };
+            /*
+             * Primary image.
+             */
+            image:
+              imageData.image,
+
+            /*
+             * Complete gallery.
+             */
+            images:
+              imageData.images,
+          });
+
+        const product =
+          res.product as Product;
+
+        const normalizedProduct =
+          normalizeProduct(
+            product
+          );
+
+        setProducts((current) => [
+          normalizedProduct,
+          ...current,
+        ]);
+      },
+      [
+        uploadProductImages,
+        buildProductImageData,
+        normalizeProduct,
+      ]
+    );
 
   /* =======================================================
      UPDATE PRODUCT
   ======================================================= */
 
-  const updateProduct = async (
-    id: string,
-    p: Partial<Product>,
-    imageFile?: File | null
-  ) => {
-    let imageUrl =
-      p.image ?? "";
+  const updateProduct =
+    useCallback(
+      async (
+        id: string,
+        p: Partial<Product>,
+        imageFiles?: File[] | null
+      ) => {
+        const files =
+          (imageFiles ?? []).slice(
+            0,
+            MAX_PRODUCT_IMAGES
+          );
 
-    if (imageFile) {
-      const uploadRes =
-        await adminApi.uploadImage(
-          imageFile
+        const uploadedImages =
+          await uploadProductImages(
+            files
+          );
+
+        /*
+         * If this is an edit:
+         *
+         * - No new image:
+         *   keep existing gallery.
+         *
+         * - New image(s):
+         *   add them to the beginning.
+         *
+         * Existing images are preserved
+         * until the 4-image limit.
+         */
+        const imageData =
+          buildProductImageData(
+            p,
+            uploadedImages,
+            true
+          );
+
+        const res =
+          await adminApi.updateProduct(
+            id,
+            {
+              ...p,
+
+              image:
+                imageData.image,
+
+              images:
+                imageData.images,
+            }
+          );
+
+        const product =
+          res.product as Product;
+
+        const normalizedProduct =
+          normalizeProduct(
+            product
+          );
+
+        setProducts((current) =>
+          current.map(
+            (existing) =>
+              existing.id === id
+                ? normalizedProduct
+                : existing
+          )
         );
-
-      imageUrl = uploadRes.url;
-    }
-
-    const res =
-      await adminApi.updateProduct(
-        id,
-        {
-          ...p,
-          image: imageUrl,
-        }
-      );
-
-    setProducts((current) =>
-      current.map((product) =>
-        product.id === id
-          ? res.product
-          : product
-      )
+      },
+      [
+        uploadProductImages,
+        buildProductImageData,
+        normalizeProduct,
+      ]
     );
-  };
 
   /* =======================================================
      DELETE PRODUCT
   ======================================================= */
 
-  const deleteProduct = async (
-    id: string
-  ) => {
-    await adminApi.deleteProduct(id);
+  const deleteProduct =
+    useCallback(
+      async (
+        id: string
+      ) => {
+        await adminApi.deleteProduct(
+          id
+        );
 
-    setProducts((current) =>
-      current.filter(
-        (product) =>
-          product.id !== id
-      )
+        setProducts((current) =>
+          current.filter(
+            (product) =>
+              product.id !== id
+          )
+        );
+      },
+      []
     );
-  };
 
   /* =======================================================
      BULK PRODUCT ACTION
   ======================================================= */
 
-  const bulkProductAction = async (
-    ids: string[],
-    action:
-      | "activate"
-      | "deactivate"
-      | "delete"
-  ) => {
-    await adminApi.bulkProductAction(
-      ids,
-      action
+  const bulkProductAction =
+    useCallback(
+      async (
+        ids: string[],
+        action:
+          | "activate"
+          | "deactivate"
+          | "delete"
+      ) => {
+        if (ids.length === 0) {
+          return;
+        }
+
+        await adminApi.bulkProductAction(
+          ids,
+          action
+        );
+
+        if (
+          action === "delete"
+        ) {
+          setProducts((current) =>
+            current.filter(
+              (product) =>
+                !ids.includes(
+                  product.id
+                )
+            )
+          );
+
+          return;
+        }
+
+        setProducts((current) =>
+          current.map(
+            (product) =>
+              ids.includes(
+                product.id
+              )
+                ? {
+                    ...product,
+                    status:
+                      action ===
+                      "activate"
+                        ? "Active"
+                        : "Inactive",
+                  }
+                : product
+          )
+        );
+      },
+      []
     );
-
-    if (action === "delete") {
-      setProducts((current) =>
-        current.filter(
-          (product) =>
-            !ids.includes(product.id)
-        )
-      );
-
-      return;
-    }
-
-    setProducts((current) =>
-      current.map((product) =>
-        ids.includes(product.id)
-          ? {
-              ...product,
-              status:
-                action === "activate"
-                  ? "Active"
-                  : "Inactive",
-            }
-          : product
-      )
-    );
-  };
 
   /* =======================================================
      CREATE CATEGORY
   ======================================================= */
 
-  const createCategory = async (
-    data: Record<string, any>
-  ) => {
-    const res =
-      await adminApi.createCategory(
-        data
-      );
+  const createCategory =
+    useCallback(
+      async (
+        data: Record<string, any>
+      ) => {
+        const res =
+          await adminApi.createCategory(
+            data
+          );
 
-    setCategories((current) => [
-      ...current,
-      res.category,
-    ]);
-  };
+        setCategories(
+          (current) => [
+            ...current,
+            res.category,
+          ]
+        );
+      },
+      []
+    );
 
   /* =======================================================
      UPDATE CATEGORY
   ======================================================= */
 
-  const updateCategory = async (
-    id: string,
-    data: Record<string, any>
-  ) => {
-    const res =
-      await adminApi.updateCategory(
-        id,
-        data
-      );
+  const updateCategory =
+    useCallback(
+      async (
+        id: string,
+        data: Record<string, any>
+      ) => {
+        const res =
+          await adminApi.updateCategory(
+            id,
+            data
+          );
 
-    setCategories((current) =>
-      current.map((category) =>
-        category.id === id
-          ? res.category
-          : category
-      )
+        setCategories(
+          (current) =>
+            current.map(
+              (category) =>
+                category.id === id
+                  ? res.category
+                  : category
+            )
+        );
+      },
+      []
     );
-  };
 
   /* =======================================================
      DELETE CATEGORY
   ======================================================= */
 
-  const deleteCategory = async (
-    id: string
-  ) => {
-    await adminApi.deleteCategory(id);
+  const deleteCategory =
+    useCallback(
+      async (
+        id: string
+      ) => {
+        await adminApi.deleteCategory(
+          id
+        );
 
-    setCategories((current) =>
-      current.filter(
-        (category) =>
-          category.id !== id
-      )
+        setCategories(
+          (current) =>
+            current.filter(
+              (category) =>
+                category.id !== id
+            )
+        );
+      },
+      []
     );
-  };
 
   /* =======================================================
      REORDER CATEGORIES
   ======================================================= */
 
-  const reorderCategories = async (
-    orderedIds: string[]
-  ) => {
-    await adminApi.reorderCategories(
-      orderedIds
-    );
+  const reorderCategories =
+    useCallback(
+      async (
+        orderedIds: string[]
+      ) => {
+        await adminApi.reorderCategories(
+          orderedIds
+        );
 
-    setCategories((current) => {
-      const map = new Map(
-        current.map((category) => [
-          category.id,
-          category,
-        ])
-      );
+        setCategories(
+          (current) => {
+            const map =
+              new Map(
+                current.map(
+                  (category) => [
+                    category.id,
+                    category,
+                  ]
+                )
+              );
 
-      return orderedIds
-        .map((id, index) => {
-          const category =
-            map.get(id);
+            return orderedIds
+              .map(
+                (
+                  id,
+                  index
+                ) => {
+                  const category =
+                    map.get(id);
 
-          if (!category) {
-            return null;
+                  if (
+                    !category
+                  ) {
+                    return null;
+                  }
+
+                  return {
+                    ...category,
+                    sortOrder:
+                      index,
+                  };
+                }
+              )
+              .filter(
+                (
+                  category
+                ): category is Category =>
+                  category !==
+                  null
+              );
           }
-
-          return {
-            ...category,
-            sortOrder: index,
-          };
-        })
-        .filter(
-          Boolean
-        ) as Category[];
-    });
-  };
+        );
+      },
+      []
+    );
 
   /* =======================================================
      CREATE REEL
   ======================================================= */
 
-  const createReel = async (
-    data: Partial<Reel>,
-    videoFile?: File | null,
-    onProgress?: (
-      progress: number
-    ) => void
-  ) => {
-    let videoUrl =
-      data.videoUrl ?? "";
+  const createReel =
+    useCallback(
+      async (
+        data: Partial<Reel>,
+        videoFile?: File | null,
+        onProgress?: (
+          progress: number
+        ) => void
+      ) => {
+        let videoUrl =
+          data.videoUrl ?? "";
 
-    if (videoFile) {
-      const uploadRes =
-        await adminApi.uploadImage(
-          videoFile,
-          onProgress
-        );
+        if (videoFile) {
+          const uploadRes =
+            await adminApi.uploadImage(
+              videoFile,
+              onProgress
+            );
 
-      videoUrl = uploadRes.url;
-    }
+          videoUrl =
+            uploadRes.url;
+        }
 
-    const res =
-      await adminApi.createReel({
-        ...data,
-        videoUrl,
-      });
+        const res =
+          await adminApi.createReel({
+            ...data,
+            videoUrl,
+          });
 
-    setReels((current) => [
-      ...current,
-      res.reel,
-    ]);
-  };
+        setReels((current) => [
+          ...current,
+          res.reel,
+        ]);
+      },
+      []
+    );
 
   /* =======================================================
      UPDATE REEL
   ======================================================= */
 
-  const updateReel = async (
-    id: string,
-    data: Partial<Reel>
-  ) => {
-    const res =
-      await adminApi.updateReel(
-        id,
-        data
-      );
+  const updateReel =
+    useCallback(
+      async (
+        id: string,
+        data: Partial<Reel>
+      ) => {
+        const res =
+          await adminApi.updateReel(
+            id,
+            data
+          );
 
-    setReels((current) =>
-      current.map((reel) =>
-        reel.id === id
-          ? res.reel
-          : reel
-      )
+        setReels((current) =>
+          current.map((reel) =>
+            reel.id === id
+              ? res.reel
+              : reel
+          )
+        );
+      },
+      []
     );
-  };
 
   /* =======================================================
      DELETE REEL
   ======================================================= */
 
-  const deleteReel = async (
-    id: string
-  ) => {
-    await adminApi.deleteReel(id);
+  const deleteReel =
+    useCallback(
+      async (
+        id: string
+      ) => {
+        await adminApi.deleteReel(
+          id
+        );
 
-    setReels((current) =>
-      current.filter(
-        (reel) =>
-          reel.id !== id
-      )
+        setReels((current) =>
+          current.filter(
+            (reel) =>
+              reel.id !== id
+          )
+        );
+      },
+      []
     );
-  };
 
   /* =======================================================
      CONTEXT VALUE
@@ -1032,9 +1417,14 @@ export function AdminProvider({
 
   const value = useMemo<Ctx>(
     () => ({
-      /* Rates */
+      /* -------------------------
+         Rates
+      ------------------------- */
+
       rates,
+
       setRates,
+
       rateHistory,
 
       addRateHistory: (
@@ -1049,7 +1439,96 @@ export function AdminProvider({
 
       ratesLastUpdated,
 
-      /* Products */
+      /* -------------------------
+         Products
+      ------------------------- */
+
+      products,
+
+      productsLoading,
+
+      loadProducts,
+
+      createProduct,
+
+      updateProduct,
+
+      deleteProduct,
+
+      bulkProductAction,
+
+      /* -------------------------
+         Discounts
+      ------------------------- */
+
+      discounts,
+
+      discountsLoading,
+
+      loadDiscounts,
+
+      addDiscount,
+
+      updateDiscount,
+
+      removeDiscount,
+
+      /* -------------------------
+         Admin Auth
+      ------------------------- */
+
+      adminUser,
+
+      authChecked,
+
+      loginAdmin,
+
+      logoutAdmin,
+
+      checkAdminAuth,
+
+      /* -------------------------
+         Categories
+      ------------------------- */
+
+      categories,
+
+      categoriesLoading,
+
+      loadCategories,
+
+      createCategory,
+
+      updateCategory,
+
+      deleteCategory,
+
+      reorderCategories,
+
+      /* -------------------------
+         Reels
+      ------------------------- */
+
+      reels,
+
+      reelsLoading,
+
+      loadReels,
+
+      createReel,
+
+      updateReel,
+
+      deleteReel,
+    }),
+    [
+      rates,
+      setRates,
+
+      rateHistory,
+
+      ratesLastUpdated,
+
       products,
       productsLoading,
       loadProducts,
@@ -1058,7 +1537,6 @@ export function AdminProvider({
       deleteProduct,
       bulkProductAction,
 
-      /* Discounts */
       discounts,
       discountsLoading,
       loadDiscounts,
@@ -1066,14 +1544,12 @@ export function AdminProvider({
       updateDiscount,
       removeDiscount,
 
-      /* Admin auth */
       adminUser,
       authChecked,
       loginAdmin,
       logoutAdmin,
       checkAdminAuth,
 
-      /* Categories */
       categories,
       categoriesLoading,
       loadCategories,
@@ -1082,42 +1558,18 @@ export function AdminProvider({
       deleteCategory,
       reorderCategories,
 
-      /* Reels */
       reels,
       reelsLoading,
       loadReels,
       createReel,
       updateReel,
       deleteReel,
-    }),
-    [
-      rates,
-      rateHistory,
-      ratesLastUpdated,
-
-      products,
-      productsLoading,
-      loadProducts,
-
-      discounts,
-      discountsLoading,
-      loadDiscounts,
-      addDiscount,
-      updateDiscount,
-      removeDiscount,
-
-      adminUser,
-      authChecked,
-
-      categories,
-      categoriesLoading,
-      loadCategories,
-
-      reels,
-      reelsLoading,
-      loadReels,
     ]
   );
+
+  /* =======================================================
+     PROVIDER
+  ======================================================= */
 
   return (
     <AdminCtx.Provider value={value}>
