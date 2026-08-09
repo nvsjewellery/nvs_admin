@@ -7,7 +7,6 @@ import {
   Percent,
   Users,
   ShoppingBag,
-  Star,
   LogOut,
   Gem,
   Clapperboard,
@@ -33,7 +32,6 @@ const items: NavItem[] = [
   { to: "/discounts", label: "Discounts", icon: Percent },
   { to: "/customers", label: "Customers", icon: Users },
   { to: "/orders", label: "Orders", icon: ShoppingBag },
-  { to: "/reviews", label: "Reviews", icon: Star },
   { to: "/reels", label: "Instagram Reels", icon: Clapperboard },
 ];
 
@@ -44,15 +42,9 @@ export function AdminSidebar({ collapsed }: { collapsed: boolean }) {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   async function handleLogout() {
-  const confirmed = window.confirm("Are you sure you want to logout?");
-
-  if (!confirmed) {
-    return;
+    await logoutAdmin();
+    nav({ to: "/login" });
   }
-
-  await logoutAdmin();
-  nav({ to: "/login" });
-}
 
   return (
     <>
