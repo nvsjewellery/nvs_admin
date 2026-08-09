@@ -137,22 +137,30 @@ function CategoriesPage() {
   // ============================================================
 
   async function handleDelete(
-    id: string
+  id: string
+) {
+  if (
+    !window.confirm(
+      "Are you sure you want to delete this sub-category? This action cannot be undone."
+    )
   ) {
-    try {
-      await deleteCategory(id);
-
-      toast.success(
-        "Sub-category deleted"
-      );
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Delete failed"
-      );
-    }
+    return;
   }
+
+  try {
+    await deleteCategory(id);
+
+    toast.success(
+      "Sub-category deleted"
+    );
+  } catch (err) {
+    toast.error(
+      err instanceof Error
+        ? err.message
+        : "Delete failed"
+    );
+  }
+}
 
   // ============================================================
   // ADD

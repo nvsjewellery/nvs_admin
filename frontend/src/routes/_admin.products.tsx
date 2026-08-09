@@ -271,22 +271,30 @@ function ProductsPage() {
   ========================================================== */
 
   async function handleDelete(
-    id: string
+  id: string
+) {
+  if (
+    !window.confirm(
+      "Are you sure you want to delete this product? This action cannot be undone."
+    )
   ) {
-    try {
-      await deleteProduct(id);
-
-      toast.success(
-        "Product deleted"
-      );
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Delete failed"
-      );
-    }
+    return;
   }
+
+  try {
+    await deleteProduct(id);
+
+    toast.success(
+      "Product deleted"
+    );
+  } catch (err) {
+    toast.error(
+      err instanceof Error
+        ? err.message
+        : "Delete failed"
+    );
+  }
+}
 
   /* ==========================================================
      EXPORT EXCEL

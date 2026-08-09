@@ -561,34 +561,42 @@ function DiscountsPage() {
   ======================================================= */
 
   async function handleRemove(
-    id: string
+  id: string
+) {
+  if (
+    !window.confirm(
+      "Are you sure you want to remove this discount? This action cannot be undone."
+    )
   ) {
-    try {
-      await removeDiscount(id);
-
-      /*
-       * If the deleted discount is
-       * the displayed generated coupon,
-       * remove it from the display too.
-       */
-
-      if (
-        generatedCoupon?.id === id
-      ) {
-        setGeneratedCoupon(null);
-      }
-
-      toast.success(
-        "Discount removed"
-      );
-    } catch (err) {
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Failed to remove discount"
-      );
-    }
+    return;
   }
+
+  try {
+    await removeDiscount(id);
+
+    /*
+     * If the deleted discount is
+     * the displayed generated coupon,
+     * remove it from the display too.
+     */
+
+    if (
+      generatedCoupon?.id === id
+    ) {
+      setGeneratedCoupon(null);
+    }
+
+    toast.success(
+      "Discount removed"
+    );
+  } catch (err) {
+    toast.error(
+      err instanceof Error
+        ? err.message
+        : "Failed to remove discount"
+    );
+  }
+}
 
   /* =======================================================
      RENDER
