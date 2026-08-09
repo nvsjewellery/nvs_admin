@@ -10,13 +10,16 @@ import {
   TrendingUp,
   TrendingDown,
 } from "lucide-react";
+
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
+
 import {
   Table,
   TableBody,
@@ -25,11 +28,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+
 import {
   PageHeader,
   StatusBadge,
 } from "@/components/admin/shared";
+
 import { adminApi } from "@/lib/adminApi";
+
+/* =========================================================
+   ROUTE
+========================================================= */
 
 export const Route = createFileRoute("/_admin/")({
   head: () => ({
@@ -38,9 +47,17 @@ export const Route = createFileRoute("/_admin/")({
   component: Dashboard,
 });
 
+/* =========================================================
+   HELPERS
+========================================================= */
+
 function inr(n: number) {
   return `₹${(n || 0).toLocaleString("en-IN")}`;
 }
+
+/* =========================================================
+   STAT CARD
+========================================================= */
 
 function Stat({
   icon: Icon,
@@ -56,25 +73,49 @@ function Stat({
   negative?: boolean;
 }) {
   return (
-    <div>
-      {label}
-      {value}
+    <Card>
+      <CardContent className="p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-sm text-muted-foreground">
+              {label}
+            </p>
 
-      {delta && (
-        <div
-          className={`mt-3 text-xs flex items-center gap-1 ${
-            negative
-              ? "text-destructive"
-              : "text-success"
-          }`}
-        >
-          {negative ? <TrendingDown /> : <TrendingUp />}
-          {delta}
+            <p className="mt-1 text-2xl font-semibold tracking-tight">
+              {value}
+            </p>
+
+            {delta && (
+              <div
+                className={`mt-3 text-xs flex items-center gap-1 ${
+                  negative
+                    ? "text-destructive"
+                    : "text-success"
+                }`}
+              >
+                {negative ? (
+                  <TrendingDown className="h-3.5 w-3.5" />
+                ) : (
+                  <TrendingUp className="h-3.5 w-3.5" />
+                )}
+
+                {delta}
+              </div>
+            )}
+          </div>
+
+          <div className="h-10 w-10 rounded-lg bg-gold/10 flex items-center justify-center shrink-0">
+            <Icon className="h-5 w-5 text-gold" />
+          </div>
         </div>
-      )}
-    </div>
+      </CardContent>
+    </Card>
   );
 }
+
+/* =========================================================
+   LOW STOCK
+========================================================= */
 
 const LOW_STOCK_THRESHOLD = 5;
 
@@ -88,9 +129,32 @@ type DashboardCache = {
   products: any[];
 };
 
+/*
+ * IMPORTANT:
+ *
+ * This cache lives outside the React component.
+ *
+ * Therefore when the user navigates:
+ *
+ * Dashboard
+ *    ↓
+ * Customers
+ *    ↓
+ * Orders
+ *    ↓
+ * Dashboard
+ *
+ * the dashboard data is still available.
+ */
 let dashboardCache: DashboardCache | null = null;
 
-let dashboardPromise: Promise<DashboardCache> | null = null;
+/*
+ * Prevent duplicate API requests when multiple
+ * components/effects try to load the dashboard
+ * at the same time.
+ */
+let dashboardPromise: Promise<DashboardCache> | null =
+  null;
 
 /* =========================================================
    LOAD DASHBOARD DATA
@@ -98,21 +162,34 @@ let dashboardPromise: Promise<DashboardCache> | null = null;
 
 async function loadDashboardData(): Promise<DashboardCache> {
   /*
-   * If data is already cached, return it immediately.
+   * -------------------------------------------------------
+   * CACHE HIT
+   * -------------------------------------------------------
+   *
+   * If dashboard data already exists, immediately
+   * return it without making another API request.
    */
   if (dashboardCache) {
     return dashboardCache;
   }
 
   /*
-   * Prevent multiple simultaneous API requests.
+   * -------------------------------------------------------
+   * REQUEST ALREADY IN PROGRESS
+   * -------------------------------------------------------
    *
-   * This is especially useful during React development
-   * with StrictMode where effects may run more than once.
+   * If another component/effect already started
+   * loading the dashboard, reuse that same Promise.
    */
   if (dashboardPromise) {
     return dashboardPromise;
   }
+
+  /*
+   * -------------------------------------------------------
+   * FIRST LOAD
+   * -------------------------------------------------------
+   */
 
   dashboardPromise = Promise.all([
     adminApi.getOrders(),
@@ -142,12 +219,22 @@ async function loadDashboardData(): Promise<DashboardCache> {
             [],
         };
 
+        /*
+         * Save successful response in cache.
+         */
         dashboardCache = result;
 
         return result;
       }
     )
     .finally(() => {
+      /*
+       * Request is finished.
+       *
+       * Keep dashboardCache.
+       *
+       * Only clear the Promise reference.
+       */
       dashboardPromise = null;
     });
 
@@ -160,6 +247,17 @@ async function loadDashboardData(): Promise<DashboardCache> {
 
 function Dashboard() {
   const nav = useNavigate();
+
+  /*
+   * -------------------------------------------------------
+   * INITIAL STATE
+   * -------------------------------------------------------
+   *
+   * If cache already exists, initialize directly from it.
+   *
+   * This means returning to the dashboard does NOT show
+   * a loading state.
+   */
 
   const [orders, setOrders] = useState<any[]>(
     dashboardCache?.orders || []
@@ -174,25 +272,20 @@ function Dashboard() {
     dashboardCache?.products || []
   );
 
-  /*
-   * IMPORTANT:
-   *
-   * If cache already exists:
-   * loading starts as false.
-   *
-   * Therefore navigating back to dashboard
-   * does NOT show Loading...
-   */
   const [loading, setLoading] = useState(
     !dashboardCache
   );
+
+  /* =======================================================
+     LOAD ONLY WHEN CACHE DOES NOT EXIST
+  ======================================================= */
 
   useEffect(() => {
     let mounted = true;
 
     /*
-     * Cache already exists.
-     * Nothing needs to be loaded again.
+     * If cache already exists, there is absolutely
+     * nothing to fetch.
      */
     if (dashboardCache) {
       return () => {
@@ -207,9 +300,11 @@ function Dashboard() {
         }
 
         setOrders(data.orders);
+
         setCustomerCount(
           data.customerCount
         );
+
         setProducts(data.products);
       })
       .catch((err: any) => {
@@ -218,7 +313,7 @@ function Dashboard() {
         }
 
         toast.error(
-          err.message ||
+          err?.message ||
             "Failed to load dashboard data"
         );
       })
@@ -232,6 +327,10 @@ function Dashboard() {
       mounted = false;
     };
   }, []);
+
+  /* =======================================================
+     DASHBOARD CALCULATIONS
+  ======================================================= */
 
   const totalRevenue = orders.reduce(
     (s, o) =>
@@ -272,8 +371,16 @@ function Dashboard() {
     );
   }
 
+  /* =======================================================
+     UI
+  ======================================================= */
+
   return (
     <>
+      {/* =================================================
+          PAGE HEADER
+      ================================================= */}
+
       <PageHeader
         title="Dashboard"
         description="Overview of orders, revenue and inventory across NVS Jewellery."
@@ -290,6 +397,10 @@ function Dashboard() {
           </Button>
         }
       />
+
+      {/* =================================================
+          STAT CARDS
+      ================================================= */}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Stat
@@ -339,10 +450,15 @@ function Dashboard() {
         />
       </div>
 
+      {/* =================================================
+          LOW STOCK
+      ================================================= */}
+
       {/* {!loading && lowStockCount > 0 && (
         <Card className="mb-6 border-destructive/40">
           <CardContent className="p-4 flex items-center gap-3">
             <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
+
             <p className="text-sm">
               <span className="font-semibold">
                 {lowStockCount}
@@ -358,6 +474,10 @@ function Dashboard() {
           </CardContent>
         </Card>
       )} */}
+
+      {/* =================================================
+          RECENT ORDERS
+      ================================================= */}
 
       <Card>
         <CardHeader>
