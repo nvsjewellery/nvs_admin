@@ -1,6 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { toast } from "sonner";
+
 import {
   Search,
   Download,
@@ -10,10 +15,20 @@ import {
 } from "lucide-react";
 
 import { PageHeader } from "@/components/admin/shared";
-import { Card, CardContent } from "@/components/ui/card";
+
+import {
+  Card,
+  CardContent,
+} from "@/components/ui/card";
+
 import { Button } from "@/components/ui/button";
+
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+import {
+  Avatar,
+  AvatarFallback,
+} from "@/components/ui/avatar";
 
 import {
   Dialog,
@@ -44,9 +59,15 @@ import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-export const Route = createFileRoute("/_admin/customers")({
+export const Route = createFileRoute(
+  "/_admin/customers"
+)({
   head: () => ({
-    meta: [{ title: "Customers — NVS Admin" }],
+    meta: [
+      {
+        title: "Customers — NVS Admin",
+      },
+    ],
   }),
   component: CustomersPage,
 });
@@ -62,70 +83,223 @@ interface Customer {
   cart: number;
 }
 
+/* =========================================================
+   CUSTOMERS CACHE
+========================================================= */
+
+let customersCache: Customer[] | null =
+  null;
+
+let customersPromise:
+  | Promise<Customer[]>
+  | null = null;
+
+/* =========================================================
+   LOAD CUSTOMERS
+========================================================= */
+
+async function loadCustomers(): Promise<
+  Customer[]
+> {
+  /*
+   * Return cached data immediately.
+   */
+  if (customersCache) {
+    return customersCache;
+  }
+
+  /*
+   * Prevent duplicate requests.
+   */
+  if (customersPromise) {
+    return customersPromise;
+  }
+
+  customersPromise = adminApi
+    .getCustomers()
+    .then((res) => {
+      const data =
+        res.customers ?? [];
+
+      customersCache = data;
+
+      return data;
+    })
+    .finally(() => {
+      customersPromise = null;
+    });
+
+  return customersPromise;
+}
+
+/* =========================================================
+   CUSTOMERS PAGE
+========================================================= */
+
 function CustomersPage() {
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Customer | null>(null);
+  const [customers, setCustomers] =
+    useState<Customer[]>(
+      customersCache || []
+    );
+
+  const [loading, setLoading] =
+    useState(
+      !customersCache
+    );
+
+  const [search, setSearch] =
+    useState("");
+
+  const [selected, setSelected] =
+    useState<Customer | null>(
+      null
+    );
+
+  /* =======================================================
+     LOAD CUSTOMER DATA
+  ======================================================= */
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await adminApi.getCustomers();
-        setCustomers(res.customers ?? []);
-      } catch (err: any) {
-        toast.error(err.message || "Failed to load customers");
-      } finally {
-        setLoading(false);
-      }
-    };
+    let mounted = true;
 
-    load();
+    /*
+     * Cache already exists.
+     * No loading screen and no API call.
+     */
+    if (customersCache) {
+      return () => {
+        mounted = false;
+      };
+    }
+
+    loadCustomers()
+      .then((data) => {
+        if (!mounted) {
+          return;
+        }
+
+        setCustomers(data);
+      })
+      .catch((err: any) => {
+        if (!mounted) {
+          return;
+        }
+
+        toast.error(
+          err.message ||
+            "Failed to load customers"
+        );
+      })
+      .finally(() => {
+        if (mounted) {
+          setLoading(false);
+        }
+      });
+
+    return () => {
+      mounted = false;
+    };
   }, []);
 
+  /* =======================================================
+     FILTER
+  ======================================================= */
+
   const filtered = useMemo(() => {
-    const q = search.toLowerCase().trim();
+    const q =
+      search
+        .toLowerCase()
+        .trim();
 
-    return customers.filter((customer) => {
-      return (
-        customer.id.toLowerCase().includes(q) ||
-        customer.name.toLowerCase().includes(q) ||
-        customer.email.toLowerCase().includes(q) ||
-        (customer.phone ?? "").includes(q)
-      );
-    });
-  }, [customers, search]);
+    return customers.filter(
+      (customer) => {
+        return (
+          customer.id
+            .toLowerCase()
+            .includes(q) ||
+          customer.name
+            .toLowerCase()
+            .includes(q) ||
+          customer.email
+            .toLowerCase()
+            .includes(q) ||
+          (
+            customer.phone ??
+            ""
+          ).includes(q)
+        );
+      }
+    );
+  }, [
+    customers,
+    search,
+  ]);
 
-  const copyToClipboard = (text: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    navigator.clipboard.writeText(text);
-    toast.success("User ID copied to clipboard");
+  /* =======================================================
+     COPY ID
+  ======================================================= */
+
+  const copyToClipboard = (
+    text: string,
+    e?: React.MouseEvent
+  ) => {
+    if (e) {
+      e.stopPropagation();
+    }
+
+    navigator.clipboard.writeText(
+      text
+    );
+
+    toast.success(
+      "User ID copied to clipboard"
+    );
   };
 
-  // ============================================================
-  // EXPORT EXCEL
-  // ============================================================
+  /* =======================================================
+     EXPORT EXCEL
+  ======================================================= */
 
   function exportExcel() {
     if (filtered.length === 0) {
-      toast.error("No customers available to export");
+      toast.error(
+        "No customers available to export"
+      );
+
       return;
     }
 
-    const rows = filtered.map((customer) => ({
-      "Customer ID": customer.id,
-      Name: customer.name,
-      Email: customer.email,
-      Phone: customer.phone || "",
-      Addresses: customer.addresses,
-      Wishlist: customer.wishlist,
-      "Cart Items": customer.cart,
-      Joined: new Date(customer.joined).toLocaleDateString("en-IN"),
-    }));
+    const rows = filtered.map(
+      (customer) => ({
+        "Customer ID":
+          customer.id,
+        Name: customer.name,
+        Email: customer.email,
+        Phone:
+          customer.phone ||
+          "",
+        Addresses:
+          customer.addresses,
+        Wishlist:
+          customer.wishlist,
+        "Cart Items":
+          customer.cart,
+        Joined:
+          new Date(
+            customer.joined
+          ).toLocaleDateString(
+            "en-IN"
+          ),
+      })
+    );
 
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const worksheet =
+      XLSX.utils.json_to_sheet(
+        rows
+      );
 
-    const workbook = XLSX.utils.book_new();
+    const workbook =
+      XLSX.utils.book_new();
 
     XLSX.utils.book_append_sheet(
       workbook,
@@ -138,16 +312,21 @@ function CustomersPage() {
       `customers-report-${Date.now()}.xlsx`
     );
 
-    toast.success("Customers exported to Excel");
+    toast.success(
+      "Customers exported to Excel"
+    );
   }
 
-  // ============================================================
-  // EXPORT PDF
-  // ============================================================
+  /* =======================================================
+     EXPORT PDF
+  ======================================================= */
 
   function exportPdf() {
     if (filtered.length === 0) {
-      toast.error("No customers available to export");
+      toast.error(
+        "No customers available to export"
+      );
+
       return;
     }
 
@@ -189,25 +368,34 @@ function CustomersPage() {
         ],
       ],
 
-      body: filtered.map((customer) => [
-        customer.id,
-        customer.name,
-        customer.email,
-        customer.phone || "—",
-        customer.addresses,
-        customer.wishlist,
-        customer.cart,
-        new Date(customer.joined).toLocaleDateString(
-          "en-IN"
-        ),
-      ]),
+      body: filtered.map(
+        (customer) => [
+          customer.id,
+          customer.name,
+          customer.email,
+          customer.phone ||
+            "—",
+          customer.addresses,
+          customer.wishlist,
+          customer.cart,
+          new Date(
+            customer.joined
+          ).toLocaleDateString(
+            "en-IN"
+          ),
+        ]
+      ),
 
       styles: {
         fontSize: 8,
       },
 
       headStyles: {
-        fillColor: [184, 134, 11],
+        fillColor: [
+          184,
+          134,
+          11,
+        ],
       },
     });
 
@@ -215,8 +403,14 @@ function CustomersPage() {
       `customers-report-${Date.now()}.pdf`
     );
 
-    toast.success("Customers exported to PDF");
+    toast.success(
+      "Customers exported to PDF"
+    );
   }
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <>
@@ -225,7 +419,9 @@ function CustomersPage() {
         description={`${customers.length} Registered Customers`}
         actions={
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+            <DropdownMenuTrigger
+              asChild
+            >
               <Button variant="outline">
                 <Download className="h-4 w-4 mr-1" />
                 Export
@@ -233,12 +429,20 @@ function CustomersPage() {
             </DropdownMenuTrigger>
 
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={exportExcel}>
+              <DropdownMenuItem
+                onClick={
+                  exportExcel
+                }
+              >
                 <FileSpreadsheet className="h-4 w-4 mr-2" />
                 Export as Excel
               </DropdownMenuItem>
 
-              <DropdownMenuItem onClick={exportPdf}>
+              <DropdownMenuItem
+                onClick={
+                  exportPdf
+                }
+              >
                 <FileText className="h-4 w-4 mr-2" />
                 Export as PDF
               </DropdownMenuItem>
@@ -259,7 +463,9 @@ function CustomersPage() {
               className="pl-9"
               value={search}
               onChange={(e) =>
-                setSearch(e.target.value)
+                setSearch(
+                  e.target.value
+                )
               }
             />
           </div>
@@ -274,7 +480,8 @@ function CustomersPage() {
             <div className="p-10 text-center text-muted-foreground">
               Loading customers...
             </div>
-          ) : filtered.length === 0 ? (
+          ) : filtered.length ===
+            0 ? (
             <div className="p-10 text-center text-muted-foreground">
               No customers found.
             </div>
@@ -313,79 +520,121 @@ function CustomersPage() {
               </TableHeader>
 
               <TableBody>
-                {filtered.map((customer) => (
-                  <TableRow
-                    key={customer.id}
-                    className="cursor-pointer hover:bg-muted/40"
-                    onClick={() =>
-                      setSelected(customer)
-                    }
-                  >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-1.5">
-                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono truncate max-w-[120px]">
-                          {customer.id}
-                        </code>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
-                          onClick={(e) => copyToClipboard(customer.id, e)}
-                          title="Copy User ID"
-                        >
-                          <Copy className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
+                {filtered.map(
+                  (customer) => (
+                    <TableRow
+                      key={
+                        customer.id
+                      }
+                      className="cursor-pointer hover:bg-muted/40"
+                      onClick={() =>
+                        setSelected(
+                          customer
+                        )
+                      }
+                    >
+                      <TableCell
+                        onClick={(e) =>
+                          e.stopPropagation()
+                        }
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono truncate max-w-[120px]">
+                            {
+                              customer.id
+                            }
+                          </code>
 
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-9 w-9">
-                          <AvatarFallback className="bg-gold/20 text-gold-foreground">
-                            {customer.name
-                              .split(" ")
-                              .map((n) => n[0])
-                              .join("")}
-                          </AvatarFallback>
-                        </Avatar>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                            onClick={(
+                              e
+                            ) =>
+                              copyToClipboard(
+                                customer.id,
+                                e
+                              )
+                            }
+                            title="Copy User ID"
+                          >
+                            <Copy className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
 
-                        <div>
-                          <div className="font-medium">
-                            {customer.name}
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-9 w-9">
+                            <AvatarFallback className="bg-gold/20 text-gold-foreground">
+                              {customer.name
+                                .split(
+                                  " "
+                                )
+                                .map(
+                                  (n) =>
+                                    n[0]
+                                )
+                                .join(
+                                  ""
+                                )}
+                            </AvatarFallback>
+                          </Avatar>
+
+                          <div>
+                            <div className="font-medium">
+                              {
+                                customer.name
+                              }
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </TableCell>
+                      </TableCell>
 
-                    <TableCell>
-                      <div className="text-sm">
-                        {customer.email}
-                      </div>
+                      <TableCell>
+                        <div className="text-sm">
+                          {
+                            customer.email
+                          }
+                        </div>
 
-                      <div className="text-xs text-muted-foreground">
-                        {customer.phone || "-"}
-                      </div>
-                    </TableCell>
+                        <div className="text-xs text-muted-foreground">
+                          {
+                            customer.phone ||
+                            "-"
+                          }
+                        </div>
+                      </TableCell>
 
-                    <TableCell>
-                      {customer.addresses}
-                    </TableCell>
+                      <TableCell>
+                        {
+                          customer.addresses
+                        }
+                      </TableCell>
 
-                    <TableCell>
-                      {customer.wishlist}
-                    </TableCell>
+                      <TableCell>
+                        {
+                          customer.wishlist
+                        }
+                      </TableCell>
 
-                    <TableCell>
-                      {customer.cart}
-                    </TableCell>
+                      <TableCell>
+                        {
+                          customer.cart
+                        }
+                      </TableCell>
 
-                    <TableCell className="text-muted-foreground text-xs">
-                      {new Date(
-                        customer.joined
-                      ).toLocaleDateString("en-IN")}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      <TableCell className="text-muted-foreground text-xs">
+                        {new Date(
+                          customer.joined
+                        ).toLocaleDateString(
+                          "en-IN"
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                )}
               </TableBody>
             </Table>
           )}
@@ -407,21 +656,23 @@ function CustomersPage() {
             <>
               <DialogHeader>
                 <DialogTitle>
-                  {selected.name}
+                  {
+                    selected.name
+                  }
                 </DialogTitle>
               </DialogHeader>
 
               <div className="space-y-5 text-sm">
-
                 <div className="grid grid-cols-2 gap-4">
-
                   <div>
                     <div className="text-xs uppercase text-muted-foreground mb-1">
                       Email
                     </div>
 
                     <div>
-                      {selected.email}
+                      {
+                        selected.email
+                      }
                     </div>
                   </div>
 
@@ -431,7 +682,10 @@ function CustomersPage() {
                     </div>
 
                     <div>
-                      {selected.phone || "-"}
+                      {
+                        selected.phone ||
+                        "-"
+                      }
                     </div>
                   </div>
 
@@ -443,7 +697,9 @@ function CustomersPage() {
                     <div>
                       {new Date(
                         selected.joined
-                      ).toLocaleString("en-IN")}
+                      ).toLocaleString(
+                        "en-IN"
+                      )}
                     </div>
                   </div>
 
@@ -454,28 +710,35 @@ function CustomersPage() {
 
                     <div className="flex items-center gap-2">
                       <code className="break-all text-xs bg-muted p-1.5 rounded font-mono">
-                        {selected.id}
+                        {
+                          selected.id
+                        }
                       </code>
+
                       <Button
                         variant="outline"
                         size="icon"
                         className="h-7 w-7 shrink-0"
-                        onClick={() => copyToClipboard(selected.id)}
+                        onClick={() =>
+                          copyToClipboard(
+                            selected.id
+                          )
+                        }
                         title="Copy Customer ID"
                       >
                         <Copy className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
-
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
-
                   <Card>
                     <CardContent className="p-4 text-center">
                       <div className="text-2xl font-bold">
-                        {selected.addresses}
+                        {
+                          selected.addresses
+                        }
                       </div>
 
                       <div className="text-xs text-muted-foreground mt-1">
@@ -487,7 +750,9 @@ function CustomersPage() {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <div className="text-2xl font-bold">
-                        {selected.wishlist}
+                        {
+                          selected.wishlist
+                        }
                       </div>
 
                       <div className="text-xs text-muted-foreground mt-1">
@@ -499,7 +764,9 @@ function CustomersPage() {
                   <Card>
                     <CardContent className="p-4 text-center">
                       <div className="text-2xl font-bold">
-                        {selected.cart}
+                        {
+                          selected.cart
+                        }
                       </div>
 
                       <div className="text-xs text-muted-foreground mt-1">
@@ -507,19 +774,19 @@ function CustomersPage() {
                       </div>
                     </CardContent>
                   </Card>
-
                 </div>
 
                 <div className="flex justify-end pt-2 border-t">
                   <Button
                     onClick={() =>
-                      setSelected(null)
+                      setSelected(
+                        null
+                      )
                     }
                   >
                     Close
                   </Button>
                 </div>
-
               </div>
             </>
           )}
