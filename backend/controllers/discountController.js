@@ -1,8 +1,14 @@
 const asyncHandler = require("express-async-handler");
+const crypto = require("crypto");
 const prisma = require("../lib/prisma");
 
 const VALID_TYPES = ["SEASONAL", "COUPON", "CUSTOMER"];
-const VALID_TARGETS = ["PRODUCT", "CATEGORY", "CART", "CUSTOMER"];
+const VALID_TARGETS = [
+  "PRODUCT",
+  "CATEGORY",
+  "CART",
+  "CUSTOMER",
+];
 const VALID_KINDS = ["percent", "flat"];
 const VALID_METALS = ["Gold", "Silver"];
 
@@ -12,87 +18,142 @@ const VALID_METALS = ["Gold", "Silver"];
 |--------------------------------------------------------------------------
 */
 
+/*
+|--------------------------------------------------------------------------
+| Create a normal application error
+|--------------------------------------------------------------------------
+*/
+
+function createError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Parse optional date
+|--------------------------------------------------------------------------
+*/
+
 function parseOptionalDate(value, fieldName) {
-  if (value === undefined || value === null || value === "") {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
     return null;
   }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    const error = new Error(`Invalid ${fieldName}`);
-    error.statusCode = 400;
-    throw error;
+    throw createError(`Invalid ${fieldName}`);
   }
 
   return date;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Parse usage limit
+|--------------------------------------------------------------------------
+*/
+
 function parseUsageLimit(value) {
-  if (value === undefined || value === null || value === "") {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
     return null;
   }
 
   const limit = Number(value);
 
-  if (!Number.isInteger(limit) || limit <= 0) {
-    const error = new Error(
+  if (
+    !Number.isInteger(limit) ||
+    limit <= 0
+  ) {
+    throw createError(
       "Usage limit must be a positive whole number"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
   return limit;
 }
 
+/*
+|--------------------------------------------------------------------------
+| Validate discount value
+|--------------------------------------------------------------------------
+*/
+
 function validateDiscountValue(kind, value) {
   const discountValue = Number(value);
 
-  if (!Number.isFinite(discountValue) || discountValue <= 0) {
-    const error = new Error(
+  if (
+    !Number.isFinite(discountValue) ||
+    discountValue <= 0
+  ) {
+    throw createError(
       "Discount value must be greater than 0"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
-  if (kind === "percent" && discountValue > 100) {
-    const error = new Error(
+  if (
+    kind === "percent" &&
+    discountValue > 100
+  ) {
+    throw createError(
       "Percentage discount cannot exceed 100%"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
   return discountValue;
 }
 
-function validateDateRange(startDate, endDate) {
-  if (startDate && endDate && endDate < startDate) {
-    const error = new Error(
+/*
+|--------------------------------------------------------------------------
+| Validate date range
+|--------------------------------------------------------------------------
+*/
+
+function validateDateRange(
+  startDate,
+  endDate
+) {
+  if (
+    startDate &&
+    endDate &&
+    endDate < startDate
+  ) {
+    throw createError(
       "End date cannot be before start date"
     );
-    error.statusCode = 400;
-    throw error;
   }
 }
 
-function validateTypeTarget(type, target) {
+/*
+|--------------------------------------------------------------------------
+| Validate type + target
+|--------------------------------------------------------------------------
+*/
+
+function validateTypeTarget(
+  type,
+  target
+) {
   if (!VALID_TYPES.includes(type)) {
-    const error = new Error(
+    throw createError(
       "Invalid discount type"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
   if (!VALID_TARGETS.includes(target)) {
-    const error = new Error(
+    throw createError(
       "Invalid discount target"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
   /*
@@ -105,11 +166,9 @@ function validateTypeTarget(type, target) {
     type === "SEASONAL" &&
     !["PRODUCT", "CATEGORY"].includes(target)
   ) {
-    const error = new Error(
+    throw createError(
       "Seasonal discounts must target products or categories"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
   /*
@@ -118,12 +177,13 @@ function validateTypeTarget(type, target) {
   |--------------------------------------------------------------------------
   */
 
-  if (type === "COUPON" && target !== "CART") {
-    const error = new Error(
+  if (
+    type === "COUPON" &&
+    target !== "CART"
+  ) {
+    throw createError(
       "Coupon discounts must target the cart"
     );
-    error.statusCode = 400;
-    throw error;
   }
 
   /*
@@ -132,14 +192,149 @@ function validateTypeTarget(type, target) {
   |--------------------------------------------------------------------------
   */
 
-  if (type === "CUSTOMER" && target !== "CUSTOMER") {
-    const error = new Error(
+  if (
+    type === "CUSTOMER" &&
+    target !== "CUSTOMER"
+  ) {
+    throw createError(
       "Customer discounts must target a specific customer"
     );
-    error.statusCode = 400;
-    throw error;
   }
 }
+
+/*
+|--------------------------------------------------------------------------
+| Generate random coupon code
+|--------------------------------------------------------------------------
+|
+| Example:
+|
+| NVS7K4P2
+| NVSX91LM
+| NVS5Q8RT
+|
+| We intentionally avoid characters such as:
+|
+| I
+| O
+| 0
+| 1
+|
+| because they can be confusing when a customer
+| reads or types the coupon manually.
+|
+*/
+
+function generateCouponCode() {
+  const characters =
+    "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+  const randomBytes =
+    crypto.randomBytes(6);
+
+  let randomPart = "";
+
+  for (let i = 0; i < 6; i++) {
+    randomPart +=
+      characters[
+        randomBytes[i] %
+          characters.length
+      ];
+  }
+
+  return `NVS${randomPart}`;
+}
+
+/*
+|--------------------------------------------------------------------------
+| Generate a coupon code that does not currently exist
+|--------------------------------------------------------------------------
+*/
+
+async function generateUniqueCouponCode() {
+  const MAX_ATTEMPTS = 20;
+
+  for (
+    let attempt = 0;
+    attempt < MAX_ATTEMPTS;
+    attempt++
+  ) {
+    const code =
+      generateCouponCode();
+
+    const existing =
+      await prisma.discount.findUnique({
+        where: {
+          code,
+        },
+        select: {
+          id: true,
+        },
+      });
+
+    if (!existing) {
+      return code;
+    }
+  }
+
+  throw createError(
+    "Unable to generate a unique coupon code. Please try again.",
+    500
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Check whether Prisma error is a coupon-code unique collision
+|--------------------------------------------------------------------------
+*/
+
+function isCouponCodeUniqueError(
+  error
+) {
+  return (
+    error &&
+    error.code === "P2002" &&
+    (
+      error.meta?.target === "code" ||
+      (
+        Array.isArray(
+          error.meta?.target
+        ) &&
+        error.meta.target.includes(
+          "code"
+        )
+      )
+    )
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| Common discount include
+|--------------------------------------------------------------------------
+*/
+
+const discountInclude = {
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+    },
+  },
+
+  products: {
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      metal: true,
+      category: true,
+      va: true,
+    },
+  },
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -147,45 +342,32 @@ function validateTypeTarget(type, target) {
 |--------------------------------------------------------------------------
 |
 | Admin can see:
+|
 | - Seasonal discounts
 | - Coupon discounts
 | - Customer-specific discounts
 |
 */
 
-const getDiscounts = asyncHandler(async (req, res) => {
-  const discounts = await prisma.discount.findMany({
-    include: {
-      user: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-        },
-      },
+const getDiscounts =
+  asyncHandler(
+    async (req, res) => {
+      const discounts =
+        await prisma.discount.findMany({
+          include:
+            discountInclude,
 
-      products: {
-        select: {
-          id: true,
-          name: true,
-          sku: true,
-          metal: true,
-          category: true,
-          va: true,
-        },
-      },
-    },
+          orderBy: {
+            createdAt: "desc",
+          },
+        });
 
-    orderBy: {
-      createdAt: "desc",
-    },
-  });
-
-  res.status(200).json({
-    success: true,
-    discounts,
-  });
-});
+      res.status(200).json({
+        success: true,
+        discounts,
+      });
+    }
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -205,309 +387,333 @@ const getDiscounts = asyncHandler(async (req, res) => {
 |   CUSTOMER
 |
 | IMPORTANT:
+|
 | Every discount is applied ONLY to VA.
+|
+| Coupon codes are generated automatically by
+| the backend. The frontend does NOT need to
+| provide a coupon code.
 |
 */
 
-const createDiscount = asyncHandler(async (req, res) => {
-  const {
-    name,
-    type,
-    target,
-    kind,
-    value,
-    code,
-    userId,
-    metal,
-    category,
-    productIds,
-    startDate,
-    endDate,
-    usageLimit,
-    isActive,
-  } = req.body;
-
-  /*
-  |--------------------------------------------------------------------------
-  | Required fields
-  |--------------------------------------------------------------------------
-  */
-
-  if (!type) {
-    res.status(400);
-    throw new Error("Discount type is required");
-  }
-
-  if (!target) {
-    res.status(400);
-    throw new Error("Discount target is required");
-  }
-
-  if (!kind) {
-    res.status(400);
-    throw new Error("Discount kind is required");
-  }
-
-  if (!VALID_KINDS.includes(kind)) {
-    res.status(400);
-    throw new Error("Invalid discount kind");
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Type + Target validation
-  |--------------------------------------------------------------------------
-  */
-
-  validateTypeTarget(type, target);
-
-  /*
-  |--------------------------------------------------------------------------
-  | Metal validation
-  |--------------------------------------------------------------------------
-  */
-
-  if (metal && !VALID_METALS.includes(metal)) {
-    res.status(400);
-    throw new Error("Invalid metal");
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Discount value
-  |--------------------------------------------------------------------------
-  */
-
-  const discountValue = validateDiscountValue(
-    kind,
-    value
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | Normalize product IDs
-  |--------------------------------------------------------------------------
-  */
-
-  let selectedProductIds = [];
-
-  if (Array.isArray(productIds)) {
-    selectedProductIds = [
-      ...new Set(
-        productIds
-          .filter(Boolean)
-          .map((id) => String(id))
-      ),
-    ];
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | PRODUCT target
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    target === "PRODUCT" &&
-    selectedProductIds.length === 0
-  ) {
-    res.status(400);
-    throw new Error(
-      "Select at least one product"
-    );
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | CATEGORY target
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    target === "CATEGORY" &&
-    !category
-  ) {
-    res.status(400);
-    throw new Error(
-      "Category is required"
-    );
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Coupon
-  |--------------------------------------------------------------------------
-  */
-
-  let normalizedCode = null;
-
-  if (type === "COUPON") {
-    if (!code || !String(code).trim()) {
-      res.status(400);
-      throw new Error(
-        "Coupon code is required"
-      );
-    }
-
-    normalizedCode = String(code)
-      .trim()
-      .toUpperCase();
-
-    const existingCoupon =
-      await prisma.discount.findUnique({
-        where: {
-          code: normalizedCode,
-        },
-      });
-
-    if (existingCoupon) {
-      res.status(400);
-      throw new Error(
-        "Coupon code already exists"
-      );
-    }
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Customer-specific discount
-  |--------------------------------------------------------------------------
-  */
-
-  if (type === "CUSTOMER") {
-    if (!userId) {
-      res.status(400);
-      throw new Error(
-        "Customer must be selected"
-      );
-    }
-
-    const customer =
-      await prisma.user.findUnique({
-        where: {
-          id: userId,
-        },
-
-        select: {
-          id: true,
-        },
-      });
-
-    if (!customer) {
-      res.status(404);
-      throw new Error(
-        "Customer not found"
-      );
-    }
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Dates
-  |--------------------------------------------------------------------------
-  */
-
-  const parsedStartDate =
-    parseOptionalDate(
-      startDate,
-      "start date"
-    );
-
-  const parsedEndDate =
-    parseOptionalDate(
-      endDate,
-      "end date"
-    );
-
-  validateDateRange(
-    parsedStartDate,
-    parsedEndDate
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | Usage limit
-  |--------------------------------------------------------------------------
-  */
-
-  const parsedUsageLimit =
-    parseUsageLimit(
-      usageLimit
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | Validate selected products
-  |--------------------------------------------------------------------------
-  */
-
-  if (selectedProductIds.length > 0) {
-    const products =
-      await prisma.product.findMany({
-        where: {
-          id: {
-            in: selectedProductIds,
-          },
-        },
-
-        select: {
-          id: true,
-          metal: true,
-        },
-      });
-
-    if (
-      products.length !==
-      selectedProductIds.length
-    ) {
-      res.status(400);
-      throw new Error(
-        "One or more selected products do not exist"
-      );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Metal consistency
-    |--------------------------------------------------------------------------
-    */
-
-    if (metal) {
-      const invalidProduct =
-        products.find(
-          (product) =>
-            product.metal !== metal
-        );
-
-      if (invalidProduct) {
-        res.status(400);
-        throw new Error(
-          "Selected products must belong to the selected metal"
-        );
-      }
-    }
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Create discount
-  |--------------------------------------------------------------------------
-  */
-
-  const discount =
-    await prisma.discount.create({
-      data: {
-        name: name
-          ? String(name).trim()
-          : null,
-
+const createDiscount =
+  asyncHandler(
+    async (req, res) => {
+      const {
+        name,
         type,
         target,
         kind,
+        value,
+        userId,
+        metal,
+        category,
+        productIds,
+        startDate,
+        endDate,
+        usageLimit,
+        isActive,
+      } = req.body;
 
-        value: discountValue,
+      /*
+      |--------------------------------------------------------------------------
+      | Required fields
+      |--------------------------------------------------------------------------
+      */
 
-        code: normalizedCode,
+      if (!type) {
+        throw createError(
+          "Discount type is required"
+        );
+      }
+
+      if (!target) {
+        throw createError(
+          "Discount target is required"
+        );
+      }
+
+      if (!kind) {
+        throw createError(
+          "Discount kind is required"
+        );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Validate kind
+      |--------------------------------------------------------------------------
+      */
+
+      if (!VALID_KINDS.includes(kind)) {
+        throw createError(
+          "Invalid discount kind"
+        );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Validate type + target
+      |--------------------------------------------------------------------------
+      */
+
+      validateTypeTarget(
+        type,
+        target
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Validate metal
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        metal &&
+        !VALID_METALS.includes(metal)
+      ) {
+        throw createError(
+          "Invalid metal"
+        );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Validate discount value
+      |--------------------------------------------------------------------------
+      */
+
+      const discountValue =
+        validateDiscountValue(
+          kind,
+          value
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Normalize product IDs
+      |--------------------------------------------------------------------------
+      */
+
+      let selectedProductIds = [];
+
+      if (
+        Array.isArray(productIds)
+      ) {
+        selectedProductIds = [
+          ...new Set(
+            productIds
+              .filter(Boolean)
+              .map((id) =>
+                String(id)
+              )
+          ),
+        ];
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | PRODUCT target
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        target === "PRODUCT" &&
+        selectedProductIds.length === 0
+      ) {
+        throw createError(
+          "Select at least one product"
+        );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | CATEGORY target
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        target === "CATEGORY" &&
+        (!category ||
+          !String(category).trim())
+      ) {
+        throw createError(
+          "Category is required"
+        );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | CUSTOMER discount
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        type === "CUSTOMER"
+      ) {
+        if (!userId) {
+          throw createError(
+            "Customer must be selected"
+          );
+        }
+
+        const customer =
+          await prisma.user.findUnique({
+            where: {
+              id: userId,
+            },
+
+            select: {
+              id: true,
+            },
+          });
+
+        if (!customer) {
+          throw createError(
+            "Customer not found",
+            404
+          );
+        }
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Dates
+      |--------------------------------------------------------------------------
+      */
+
+      const parsedStartDate =
+        parseOptionalDate(
+          startDate,
+          "start date"
+        );
+
+      const parsedEndDate =
+        parseOptionalDate(
+          endDate,
+          "end date"
+        );
+
+      validateDateRange(
+        parsedStartDate,
+        parsedEndDate
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Usage limit
+      |--------------------------------------------------------------------------
+      */
+
+      const parsedUsageLimit =
+        parseUsageLimit(
+          usageLimit
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Validate selected products
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        selectedProductIds.length > 0
+      ) {
+        const products =
+          await prisma.product.findMany({
+            where: {
+              id: {
+                in: selectedProductIds,
+              },
+            },
+
+            select: {
+              id: true,
+              metal: true,
+            },
+          });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Make sure all products exist
+        |--------------------------------------------------------------------------
+        */
+
+        if (
+          products.length !==
+          selectedProductIds.length
+        ) {
+          throw createError(
+            "One or more selected products do not exist"
+          );
+        }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Make sure products belong to selected metal
+        |--------------------------------------------------------------------------
+        */
+
+        if (metal) {
+          const invalidProduct =
+            products.find(
+              (product) =>
+                product.metal !==
+                metal
+            );
+
+          if (invalidProduct) {
+            throw createError(
+              "Selected products must belong to the selected metal"
+            );
+          }
+        }
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Prepare normalized values
+      |--------------------------------------------------------------------------
+      */
+
+      const normalizedName =
+        name &&
+        String(name).trim()
+          ? String(name).trim()
+          : null;
+
+      const normalizedCategory =
+        target === "CATEGORY" &&
+        category &&
+        String(category).trim()
+          ? String(category).trim()
+          : null;
+
+      /*
+      |--------------------------------------------------------------------------
+      | Prepare common database data
+      |--------------------------------------------------------------------------
+      */
+
+      const baseData = {
+        name: normalizedName,
+
+        type,
+
+        target,
+
+        kind,
+
+        value:
+          discountValue,
+
+        /*
+        |--------------------------------------------------------------------------
+        | Coupon code is added below.
+        |--------------------------------------------------------------------------
+        */
+
+        code: null,
 
         userId:
           type === "CUSTOMER"
@@ -518,10 +724,7 @@ const createDiscount = asyncHandler(async (req, res) => {
           metal || null,
 
         category:
-          target === "CATEGORY" &&
-          category
-            ? String(category).trim()
-            : null,
+          normalizedCategory,
 
         startDate:
           parsedStartDate,
@@ -535,12 +738,14 @@ const createDiscount = asyncHandler(async (req, res) => {
         usageCount: 0,
 
         isActive:
-          typeof isActive === "boolean"
+          typeof isActive ===
+          "boolean"
             ? isActive
             : true,
 
         products:
-          selectedProductIds.length > 0
+          selectedProductIds.length >
+          0
             ? {
                 connect:
                   selectedProductIds.map(
@@ -550,35 +755,132 @@ const createDiscount = asyncHandler(async (req, res) => {
                   ),
               }
             : undefined,
-      },
+      };
 
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-          },
-        },
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE NON-COUPON DISCOUNT
+      |--------------------------------------------------------------------------
+      |
+      | Seasonal and customer-specific discounts
+      | don't need any special retry logic.
+      |
+      */
 
-        products: {
-          select: {
-            id: true,
-            name: true,
-            sku: true,
-            metal: true,
-            category: true,
-            va: true,
-          },
-        },
-      },
-    });
+      if (type !== "COUPON") {
+        const discount =
+          await prisma.discount.create({
+            data: baseData,
 
-  res.status(201).json({
-    success: true,
-    discount,
-  });
-});
+            include:
+              discountInclude,
+          });
+
+        res.status(201).json({
+          success: true,
+          discount,
+        });
+
+        return;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE COUPON DISCOUNT
+      |--------------------------------------------------------------------------
+      |
+      | Coupon code generation happens completely
+      | on the backend.
+      |
+      | Flow:
+      |
+      | Generate code
+      |      ↓
+      | Check DB
+      |      ↓
+      | Create
+      |      ↓
+      | Collision?
+      |      ↓
+      | Generate another
+      |
+      */
+
+      const MAX_CREATE_ATTEMPTS =
+        20;
+
+      for (
+        let attempt = 0;
+        attempt < MAX_CREATE_ATTEMPTS;
+        attempt++
+      ) {
+        const generatedCode =
+          await generateUniqueCouponCode();
+
+        try {
+          const discount =
+            await prisma.discount.create({
+              data: {
+                ...baseData,
+
+                code:
+                  generatedCode,
+              },
+
+              include:
+                discountInclude,
+            });
+
+          /*
+          |--------------------------------------------------------------------------
+          | Successfully created coupon
+          |--------------------------------------------------------------------------
+          */
+
+          res.status(201).json({
+            success: true,
+            discount,
+          });
+
+          return;
+        } catch (error) {
+          /*
+          |--------------------------------------------------------------------------
+          | Extremely unlikely race-condition:
+          |
+          | Another request may have created the
+          | exact same code between our findUnique()
+          | and create().
+          |
+          | If that happens, simply generate another
+          | code and retry.
+          |--------------------------------------------------------------------------
+          */
+
+          if (
+            isCouponCodeUniqueError(
+              error
+            )
+          ) {
+            continue;
+          }
+
+          throw error;
+        }
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Failed after multiple attempts
+      |--------------------------------------------------------------------------
+      */
+
+      throw createError(
+        "Unable to generate a unique coupon code. Please try again.",
+        500
+      );
+    }
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -586,174 +888,182 @@ const createDiscount = asyncHandler(async (req, res) => {
 |--------------------------------------------------------------------------
 |
 | Can update:
+|
 | - name
 | - value
 | - dates
 | - usage limit
 | - active state
 |
+| Coupon code is intentionally NOT editable.
+|
+| The generated coupon code should remain stable
+| after creation.
+|
 */
 
 const updateDiscount =
-  asyncHandler(async (req, res) => {
-    const { id } = req.params;
+  asyncHandler(
+    async (req, res) => {
+      const { id } =
+        req.params;
 
-    const existing =
-      await prisma.discount.findUnique({
-        where: {
-          id,
-        },
-      });
+      const existing =
+        await prisma.discount.findUnique({
+          where: {
+            id,
+          },
+        });
 
-    if (!existing) {
-      res.status(404);
-      throw new Error(
-        "Discount not found"
+      if (!existing) {
+        throw createError(
+          "Discount not found",
+          404
+        );
+      }
+
+      const {
+        name,
+        value,
+        startDate,
+        endDate,
+        usageLimit,
+        isActive,
+      } = req.body;
+
+      const data = {};
+
+      /*
+      |--------------------------------------------------------------------------
+      | Name
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        name !== undefined
+      ) {
+        data.name =
+          name &&
+          String(name).trim()
+            ? String(name).trim()
+            : null;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Value
+      |--------------------------------------------------------------------------
+      */
+
+      if (
+        value !== undefined
+      ) {
+        data.value =
+          validateDiscountValue(
+            existing.kind,
+            value
+          );
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Dates
+      |--------------------------------------------------------------------------
+      */
+
+      let nextStartDate =
+        existing.startDate;
+
+      let nextEndDate =
+        existing.endDate;
+
+      if (
+        startDate !==
+        undefined
+      ) {
+        nextStartDate =
+          parseOptionalDate(
+            startDate,
+            "start date"
+          );
+
+        data.startDate =
+          nextStartDate;
+      }
+
+      if (
+        endDate !==
+        undefined
+      ) {
+        nextEndDate =
+          parseOptionalDate(
+            endDate,
+            "end date"
+          );
+
+        data.endDate =
+          nextEndDate;
+      }
+
+      validateDateRange(
+        nextStartDate,
+        nextEndDate
       );
-    }
 
-    const {
-      name,
-      value,
-      startDate,
-      endDate,
-      usageLimit,
-      isActive,
-    } = req.body;
+      /*
+      |--------------------------------------------------------------------------
+      | Usage limit
+      |--------------------------------------------------------------------------
+      */
 
-    const data = {};
+      if (
+        usageLimit !==
+        undefined
+      ) {
+        data.usageLimit =
+          parseUsageLimit(
+            usageLimit
+          );
+      }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Name
-    |--------------------------------------------------------------------------
-    */
+      /*
+      |--------------------------------------------------------------------------
+      | Active state
+      |--------------------------------------------------------------------------
+      */
 
-    if (name !== undefined) {
-      data.name =
-        name && String(name).trim()
-          ? String(name).trim()
-          : null;
-    }
+      if (
+        isActive !==
+        undefined
+      ) {
+        data.isActive =
+          Boolean(isActive);
+      }
 
-    /*
-    |--------------------------------------------------------------------------
-    | Value
-    |--------------------------------------------------------------------------
-    */
+      /*
+      |--------------------------------------------------------------------------
+      | Update
+      |--------------------------------------------------------------------------
+      */
 
-    if (value !== undefined) {
-      data.value =
-        validateDiscountValue(
-          existing.kind,
-          value
-        );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Dates
-    |--------------------------------------------------------------------------
-    */
-
-    let nextStartDate =
-      existing.startDate;
-
-    let nextEndDate =
-      existing.endDate;
-
-    if (startDate !== undefined) {
-      nextStartDate =
-        parseOptionalDate(
-          startDate,
-          "start date"
-        );
-
-      data.startDate =
-        nextStartDate;
-    }
-
-    if (endDate !== undefined) {
-      nextEndDate =
-        parseOptionalDate(
-          endDate,
-          "end date"
-        );
-
-      data.endDate =
-        nextEndDate;
-    }
-
-    validateDateRange(
-      nextStartDate,
-      nextEndDate
-    );
-
-    /*
-    |--------------------------------------------------------------------------
-    | Usage limit
-    |--------------------------------------------------------------------------
-    */
-
-    if (usageLimit !== undefined) {
-      data.usageLimit =
-        parseUsageLimit(
-          usageLimit
-        );
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Active state
-    |--------------------------------------------------------------------------
-    */
-
-    if (isActive !== undefined) {
-      data.isActive =
-        Boolean(isActive);
-    }
-
-    /*
-    |--------------------------------------------------------------------------
-    | Save
-    |--------------------------------------------------------------------------
-    */
-
-    const discount =
-      await prisma.discount.update({
-        where: {
-          id,
-        },
-
-        data,
-
-        include: {
-          user: {
-            select: {
-              id: true,
-              name: true,
-              email: true,
-            },
+      const discount =
+        await prisma.discount.update({
+          where: {
+            id,
           },
 
-          products: {
-            select: {
-              id: true,
-              name: true,
-              sku: true,
-              metal: true,
-              category: true,
-              va: true,
-            },
-          },
-        },
+          data,
+
+          include:
+            discountInclude,
+        });
+
+      res.status(200).json({
+        success: true,
+        discount,
       });
-
-    res.status(200).json({
-      success: true,
-      discount,
-    });
-  });
+    }
+  );
 
 /*
 |--------------------------------------------------------------------------
@@ -762,34 +1072,44 @@ const updateDiscount =
 */
 
 const deleteDiscount =
-  asyncHandler(async (req, res) => {
-    const { id } = req.params;
+  asyncHandler(
+    async (req, res) => {
+      const { id } =
+        req.params;
 
-    const existing =
-      await prisma.discount.findUnique({
+      const existing =
+        await prisma.discount.findUnique({
+          where: {
+            id,
+          },
+        });
+
+      if (!existing) {
+        throw createError(
+          "Discount not found",
+          404
+        );
+      }
+
+      await prisma.discount.delete({
         where: {
           id,
         },
       });
 
-    if (!existing) {
-      res.status(404);
-      throw new Error(
-        "Discount not found"
-      );
+      res.status(200).json({
+        success: true,
+        message:
+          "Discount removed",
+      });
     }
+  );
 
-    await prisma.discount.delete({
-      where: {
-        id,
-      },
-    });
-
-    res.status(200).json({
-      success: true,
-      message: "Discount removed",
-    });
-  });
+/*
+|--------------------------------------------------------------------------
+| EXPORTS
+|--------------------------------------------------------------------------
+*/
 
 module.exports = {
   getDiscounts,

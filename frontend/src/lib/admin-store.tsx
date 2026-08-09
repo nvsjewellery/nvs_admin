@@ -86,15 +86,15 @@ export type Discount = {
    CREATE / UPDATE DISCOUNT INPUT
 ========================================================= */
 
-/*
- * This intentionally does NOT use Omit<Discount>.
- *
- * Backend allows productIds/userId/etc. to be optional
- * depending on the discount target.
- */
 export type CreateDiscountInput = {
   name?: string | null;
 
+  /*
+   * For COUPON:
+   * The backend now generates the code automatically.
+   *
+   * Therefore the frontend does NOT need to send a code.
+   */
   code?: string | null;
 
   type: DiscountType;
@@ -229,14 +229,24 @@ type Ctx = {
 
   loadDiscounts: () => Promise<void>;
 
+  /*
+   * IMPORTANT:
+   * addDiscount returns the newly created Discount.
+   *
+   * This is required because the coupon code is generated
+   * by the backend and returned after creation.
+   */
   addDiscount: (
     discount: CreateDiscountInput
-  ) => Promise<void>;
+  ) => Promise<Discount>;
 
+  /*
+   * updateDiscount also returns the updated Discount.
+   */
   updateDiscount: (
     id: string,
     discount: UpdateDiscountInput
-  ) => Promise<void>;
+  ) => Promise<Discount>;
 
   removeDiscount: (
     id: string
@@ -498,16 +508,14 @@ export function AdminProvider({
     useCallback(
       async (
         discount: CreateDiscountInput
-      ) => {
+      ): Promise<Discount> => {
         /*
-         * IMPORTANT:
+         * No "scope" field exists.
          *
-         * No "scope" is sent.
+         * kind + value represent the VA discount.
          *
-         * kind + value describe the VA discount.
-         *
-         * The backend also enforces that discounts
-         * are VA-only.
+         * For COUPON discounts, the backend is
+         * responsible for generating a unique code.
          */
 
         const payload: CreateDiscountInput = {
@@ -519,10 +527,39 @@ export function AdminProvider({
             payload
           );
 
+        /*
+         * The backend returns:
+         *
+         * {
+         *   success: true,
+         *   discount: {...}
+         * }
+         */
+
+        const createdDiscount =
+          res.discount as Discount;
+
+        /*
+         * Add the newly created discount
+         * to the beginning of the list.
+         */
+
         setDiscounts((current) => [
-          res.discount as Discount,
+          createdDiscount,
           ...current,
         ]);
+
+        /*
+         * IMPORTANT:
+         *
+         * Return the created discount.
+         *
+         * This allows admin-discounts.tsx to access:
+         *
+         * createdDiscount.code
+         */
+
+        return createdDiscount;
       },
       []
     );
@@ -536,7 +573,7 @@ export function AdminProvider({
       async (
         id: string,
         discount: UpdateDiscountInput
-      ) => {
+      ): Promise<Discount> => {
         const payload: UpdateDiscountInput = {
           ...discount,
         };
@@ -547,13 +584,18 @@ export function AdminProvider({
             payload
           );
 
+        const updatedDiscount =
+          res.discount as Discount;
+
         setDiscounts((current) =>
           current.map((item) =>
             item.id === id
-              ? (res.discount as Discount)
+              ? updatedDiscount
               : item
           )
         );
+
+        return updatedDiscount;
       },
       []
     );
@@ -564,7 +606,9 @@ export function AdminProvider({
 
   const removeDiscount =
     useCallback(
-      async (id: string) => {
+      async (
+        id: string
+      ): Promise<void> => {
         await adminApi.deleteDiscount(
           id
         );
