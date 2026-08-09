@@ -1,16 +1,23 @@
 const API_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:5001/api";
+  import.meta.env.VITE_API_URL ||
+  "http://localhost:5001/api";
 
-async function request(
+/* =========================================================
+   COMMON REQUEST
+========================================================= */
+
+async function request<T = any>(
   endpoint: string,
   options: RequestInit = {}
-): Promise<any> {
+): Promise<T> {
   const res = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     credentials: "include",
     headers:
       options.body instanceof FormData
-        ? { ...options.headers }
+        ? {
+            ...options.headers,
+          }
         : {
             "Content-Type": "application/json",
             ...options.headers,
@@ -20,32 +27,102 @@ async function request(
   const data = await res.json();
 
   if (!res.ok) {
-    throw new Error(data.message || "Something went wrong");
+    throw new Error(
+      data?.message || "Something went wrong"
+    );
   }
 
   return data;
 }
 
-/**
- * Upload a file with real upload progress.
- *
- * onProgress is optional, so existing product image uploads
- * continue working without any changes.
- */
+/* =========================================================
+   DISCOUNT TYPES
+========================================================= */
+
+export type DiscountType =
+  | "SEASONAL"
+  | "COUPON"
+  | "CUSTOMER";
+
+export type DiscountTarget =
+  | "PRODUCT"
+  | "CATEGORY"
+  | "CART"
+  | "CUSTOMER";
+
+export type DiscountKind =
+  | "percent"
+  | "flat";
+
+export interface DiscountPayload {
+  name?: string | null;
+  code?: string | null;
+
+  type: DiscountType;
+
+  target: DiscountTarget;
+
+  kind: DiscountKind;
+
+  /*
+   * IMPORTANT:
+   * This value is ALWAYS applied to VA /
+   * making charges only.
+   */
+  value: number;
+
+  metal?: "Gold" | "Silver" | null;
+
+  category?: string | null;
+
+  productIds?: string[];
+
+  /*
+   * Used for customer-specific discounts.
+   */
+  userId?: string | null;
+
+  startDate?: string | null;
+
+  endDate?: string | null;
+
+  usageLimit?: number | null;
+
+  usageCount?: number;
+
+  isActive?: boolean;
+}
+
+/* =========================================================
+   UPLOAD FILE WITH PROGRESS
+========================================================= */
+
 function uploadFileWithProgress(
   file: File,
   onProgress?: (progress: number) => void
-): Promise<{ success: boolean; url: string }> {
+): Promise<{
+  success: boolean;
+  url: string;
+}> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
 
-    xhr.open("POST", `${API_URL}/admin/upload`, true);
+    xhr.open(
+      "POST",
+      `${API_URL}/admin/upload`,
+      true
+    );
 
-    // Important because your admin authentication uses cookies.
+    /*
+     * Admin authentication uses cookies.
+     */
     xhr.withCredentials = true;
 
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable && onProgress) {
+      if (
+        event.lengthComputable &&
+        onProgress
+      ) {
         const percentage = Math.round(
           (event.loaded / event.total) * 100
         );
@@ -58,21 +135,30 @@ function uploadFileWithProgress(
       let data: any;
 
       try {
-        data = JSON.parse(xhr.responseText);
+        data = JSON.parse(
+          xhr.responseText
+        );
       } catch {
-        reject(new Error("Invalid response from server"));
+        reject(
+          new Error(
+            "Invalid response from server"
+          )
+        );
         return;
       }
 
-      if (xhr.status >= 200 && xhr.status < 300) {
-        // Make sure UI reaches 100% when server accepts the upload.
+      if (
+        xhr.status >= 200 &&
+        xhr.status < 300
+      ) {
         onProgress?.(100);
 
         resolve(data);
       } else {
         reject(
           new Error(
-            data?.message || "File upload failed"
+            data?.message ||
+              "File upload failed"
           )
         );
       }
@@ -88,23 +174,37 @@ function uploadFileWithProgress(
 
     xhr.onabort = () => {
       reject(
-        new Error("File upload was cancelled")
+        new Error(
+          "File upload was cancelled"
+        )
       );
     };
 
-    const formData = new FormData();
-    formData.append("image", file);
+    const formData =
+      new FormData();
+
+    formData.append(
+      "image",
+      file
+    );
 
     xhr.send(formData);
   });
 }
 
-export const adminApi = {
-  // --------------------------------------------------
-  // Auth
-  // --------------------------------------------------
+/* =========================================================
+   ADMIN API
+========================================================= */
 
-  login: (email: string, password: string) =>
+export const adminApi = {
+  /* =======================================================
+     AUTH
+  ======================================================= */
+
+  login: (
+    email: string,
+    password: string
+  ) =>
     request("/admin/auth/login", {
       method: "POST",
       body: JSON.stringify({
@@ -123,16 +223,18 @@ export const adminApi = {
       method: "GET",
     }),
 
-  // --------------------------------------------------
-  // Products
-  // --------------------------------------------------
+  /* =======================================================
+     PRODUCTS
+  ======================================================= */
 
   getProducts: () =>
     request("/admin/products", {
       method: "GET",
     }),
 
-  createProduct: (data: Record<string, any>) =>
+  createProduct: (
+    data: Record<string, any>
+  ) =>
     request("/admin/products", {
       method: "POST",
       body: JSON.stringify(data),
@@ -142,35 +244,49 @@ export const adminApi = {
     id: string,
     data: Record<string, any>
   ) =>
-    request(`/admin/products/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    request(
+      `/admin/products/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    ),
 
   deleteProduct: (id: string) =>
-    request(`/admin/products/${id}`, {
-      method: "DELETE",
-    }),
+    request(
+      `/admin/products/${id}`,
+      {
+        method: "DELETE",
+      }
+    ),
 
   bulkProductAction: (
     ids: string[],
-    action: "activate" | "deactivate" | "delete"
+    action:
+      | "activate"
+      | "deactivate"
+      | "delete"
   ) =>
-    request("/admin/products/bulk", {
-      method: "POST",
-      body: JSON.stringify({
-        ids,
-        action,
-      }),
-    }),
+    request(
+      "/admin/products/bulk",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ids,
+          action,
+        }),
+      }
+    ),
 
-  // --------------------------------------------------
-  // Image / Media Upload
-  // --------------------------------------------------
+  /* =======================================================
+     IMAGE / MEDIA UPLOAD
+  ======================================================= */
 
   uploadImage: (
     file: File,
-    onProgress?: (progress: number) => void
+    onProgress?: (
+      progress: number
+    ) => void
   ): Promise<{
     success: boolean;
     url: string;
@@ -181,112 +297,188 @@ export const adminApi = {
     );
   },
 
-  // --------------------------------------------------
-  // Categories
-  // --------------------------------------------------
+  /* =======================================================
+     CATEGORIES
+  ======================================================= */
 
   getCategories: () =>
-    request("/admin/categories", {
-      method: "GET",
-    }),
+    request(
+      "/admin/categories",
+      {
+        method: "GET",
+      }
+    ),
 
   createCategory: (
     data: Record<string, any>
   ) =>
-    request("/admin/categories", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    request(
+      "/admin/categories",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
 
   updateCategory: (
     id: string,
     data: Record<string, any>
   ) =>
-    request(`/admin/categories/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    request(
+      `/admin/categories/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    ),
 
-  deleteCategory: (id: string) =>
-    request(`/admin/categories/${id}`, {
-      method: "DELETE",
-    }),
+  deleteCategory: (
+    id: string
+  ) =>
+    request(
+      `/admin/categories/${id}`,
+      {
+        method: "DELETE",
+      }
+    ),
 
   reorderCategories: (
     orderedIds: string[]
   ) =>
-    request("/admin/categories/reorder", {
-      method: "POST",
-      body: JSON.stringify({
-        orderedIds,
-      }),
-    }),
+    request(
+      "/admin/categories/reorder",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          orderedIds,
+        }),
+      }
+    ),
 
-  // --------------------------------------------------
-  // Discounts
-  // --------------------------------------------------
+  /* =======================================================
+     DISCOUNTS
+  ======================================================= */
 
+  /*
+   * Get every discount for admin.
+   */
   getDiscounts: () =>
-    request("/admin/discounts", {
-      method: "GET",
-    }),
+    request(
+      "/admin/discounts",
+      {
+        method: "GET",
+      }
+    ),
 
+  /*
+   * Create a discount.
+   *
+   * Supported:
+   * - SEASONAL
+   * - COUPON
+   * - CUSTOMER
+   *
+   * Every discount is VA-only.
+   */
   createDiscount: (
-    data: Record<string, any>
+    data: DiscountPayload
   ) =>
-    request("/admin/discounts", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    request(
+      "/admin/discounts",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
 
-  deleteDiscount: (id: string) =>
-    request(`/admin/discounts/${id}`, {
-      method: "DELETE",
-    }),
+  /*
+   * Update an existing discount.
+   */
+  updateDiscount: (
+    id: string,
+    data: Partial<DiscountPayload>
+  ) =>
+    request(
+      `/admin/discounts/${id}`,
+      {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }
+    ),
 
-  // --------------------------------------------------
-  // Reels
-  // --------------------------------------------------
+  /*
+   * Delete a discount.
+   */
+  deleteDiscount: (
+    id: string
+  ) =>
+    request(
+      `/admin/discounts/${id}`,
+      {
+        method: "DELETE",
+      }
+    ),
+
+  /* =======================================================
+     REELS
+  ======================================================= */
 
   getReels: () =>
-    request("/reels", {
-      method: "GET",
-    }),
+    request(
+      "/reels",
+      {
+        method: "GET",
+      }
+    ),
 
   createReel: (
     data: Record<string, any>
   ) =>
-    request("/reels", {
-      method: "POST",
-      body: JSON.stringify(data),
-    }),
+    request(
+      "/reels",
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    ),
 
   updateReel: (
     id: string,
     data: Record<string, any>
   ) =>
-    request(`/reels/${id}`, {
-      method: "PUT",
-      body: JSON.stringify(data),
-    }),
+    request(
+      `/reels/${id}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    ),
 
-  deleteReel: (id: string) =>
-    request(`/reels/${id}`, {
-      method: "DELETE",
-    }),
+  deleteReel: (
+    id: string
+  ) =>
+    request(
+      `/reels/${id}`,
+      {
+        method: "DELETE",
+      }
+    ),
 
-  // --------------------------------------------------
-  // Customers
-  // --------------------------------------------------
+  /* =======================================================
+     CUSTOMERS
+  ======================================================= */
 
   getCustomers: () =>
-    request("/admin/customers", {
-      method: "GET",
-    }),
+    request(
+      "/admin/customers",
+      {
+        method: "GET",
+      }
+    ),
 
-  // --------------------------------------------------
-  // Orders
-  // --------------------------------------------------
+  /* =======================================================
+     ORDERS
+  ======================================================= */
 
   getOrders: (
     params?: {
@@ -294,33 +486,48 @@ export const adminApi = {
       search?: string;
     }
   ) => {
-    const query = new URLSearchParams();
+    const query =
+      new URLSearchParams();
 
     if (
       params?.status &&
       params.status !== "all"
     ) {
-      query.set("status", params.status);
+      query.set(
+        "status",
+        params.status
+      );
     }
 
     if (params?.search) {
-      query.set("search", params.search);
+      query.set(
+        "search",
+        params.search
+      );
     }
 
-    const qs = query.toString();
+    const qs =
+      query.toString();
 
     return request(
-      `/admin/orders${qs ? `?${qs}` : ""}`,
+      `/admin/orders${
+        qs ? `?${qs}` : ""
+      }`,
       {
         method: "GET",
       }
     );
   },
 
-  getOrderById: (orderId: string) =>
-    request(`/admin/orders/${orderId}`, {
-      method: "GET",
-    }),
+  getOrderById: (
+    orderId: string
+  ) =>
+    request(
+      `/admin/orders/${orderId}`,
+      {
+        method: "GET",
+      }
+    ),
 
   updateOrderStatus: (
     orderId: string,
@@ -366,7 +573,9 @@ export const adminApi = {
       }
     ),
 
-  cancelOrder: (orderId: string) =>
+  cancelOrder: (
+    orderId: string
+  ) =>
     request(
       `/admin/orders/${orderId}/cancel`,
       {
