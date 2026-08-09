@@ -6,6 +6,7 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Copy,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/admin/shared";
@@ -87,12 +88,19 @@ function CustomersPage() {
 
     return customers.filter((customer) => {
       return (
+        customer.id.toLowerCase().includes(q) ||
         customer.name.toLowerCase().includes(q) ||
         customer.email.toLowerCase().includes(q) ||
         (customer.phone ?? "").includes(q)
       );
     });
   }, [customers, search]);
+
+  const copyToClipboard = (text: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    toast.success("User ID copied to clipboard");
+  };
 
   // ============================================================
   // EXPORT EXCEL
@@ -170,6 +178,7 @@ function CustomersPage() {
 
       head: [
         [
+          "User ID",
           "Customer",
           "Email",
           "Phone",
@@ -181,6 +190,7 @@ function CustomersPage() {
       ],
 
       body: filtered.map((customer) => [
+        customer.id,
         customer.name,
         customer.email,
         customer.phone || "—",
@@ -245,7 +255,7 @@ function CustomersPage() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
             <Input
-              placeholder="Search customers..."
+              placeholder="Search customers by name, email, phone or User ID..."
               className="pl-9"
               value={search}
               onChange={(e) =>
@@ -272,6 +282,10 @@ function CustomersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>
+                    User ID
+                  </TableHead>
+
                   <TableHead>
                     Customer
                   </TableHead>
@@ -307,6 +321,23 @@ function CustomersPage() {
                       setSelected(customer)
                     }
                   >
+                    <TableCell onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center gap-1.5">
+                        <code className="text-xs bg-muted px-1.5 py-0.5 rounded font-mono truncate max-w-[120px]">
+                          {customer.id}
+                        </code>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => copyToClipboard(customer.id, e)}
+                          title="Copy User ID"
+                        >
+                          <Copy className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </TableCell>
+
                     <TableCell>
                       <div className="flex items-center gap-3">
                         <Avatar className="h-9 w-9">
@@ -421,8 +452,19 @@ function CustomersPage() {
                       Customer ID
                     </div>
 
-                    <div className="break-all">
-                      {selected.id}
+                    <div className="flex items-center gap-2">
+                      <code className="break-all text-xs bg-muted p-1.5 rounded font-mono">
+                        {selected.id}
+                      </code>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        className="h-7 w-7 shrink-0"
+                        onClick={() => copyToClipboard(selected.id)}
+                        title="Copy Customer ID"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </Button>
                     </div>
                   </div>
 
