@@ -718,6 +718,12 @@ uploadImages: (
       }
     ),
 
+    confirmAndShipOrder: (orderId: string, dims: { length: number; breadth: number; height: number; weight: number }) =>
+    request(`/admin/shiprocket/${orderId}/confirm-ship`, {
+        method: "POST",
+        body: JSON.stringify(dims),
+    }),
+
   updateOrderStatus: (
     orderId: string,
     status: string

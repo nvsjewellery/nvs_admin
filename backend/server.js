@@ -13,6 +13,7 @@ const uploadRoutes = require("./routes/uploadRoutes");
 const categoryRoutes = require("./routes/categoryRoutes");
 const discountRoutes = require("./routes/discountRoutes");
 const reelRoutes = require("./routes/reelRoutes");
+const adminShiprocketRoutes = require("./routes/adminShiprocketRoutes");
 
 const app = express();
 
@@ -64,6 +65,7 @@ app.use("/api/admin/discounts", discountRoutes);
 app.use("/api/reels", reelRoutes);
 app.use("/api/admin/customers", require("./routes/customerRoutes"));
 app.use("/api/admin/orders", require("./routes/adminOrderRoutes"));
+app.use("/api/admin/shiprocket", adminShiprocketRoutes);
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 app.use(notFound);
@@ -82,4 +84,4 @@ const start = async () => {
   }
 };
 
-start();
+start();  

@@ -4,10 +4,12 @@ import { toast } from "sonner";
 import { StatusBadge } from "@/components/admin/shared";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, FileText, Printer, Package, Ban, ExternalLink } from "lucide-react";
+import { ArrowLeft, FileText, Printer, Package, Ban, ExternalLink, Truck } from "lucide-react";
 import { adminApi } from "@/lib/adminApi";
 
 export const Route = createFileRoute("/orders/$orderId")({
@@ -29,6 +31,9 @@ function AdminOrderDetail() {
     const [tracking, setTracking] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    // Package dimensions entered by admin before pushing to Shiprocket
+    const [dims, setDims] = useState({ length: "", breadth: "", height: "", weight: "" });
 
     useEffect(() => {
         loadOrder();
@@ -54,6 +59,29 @@ function AdminOrderDetail() {
             toast.success(`Status updated to ${newStatus}`);
         } catch (err: any) {
             toast.error(err.message || "Failed to update status");
+        }
+    }
+
+    async function handleConfirmAndShip() {
+        const { length, breadth, height, weight } = dims;
+        if (!length || !breadth || !height || !weight) {
+            toast.error("Enter length, breadth, height, and weight");
+            return;
+        }
+        setActionLoading("ship");
+        try {
+            const res = await adminApi.confirmAndShipOrder(orderId, {
+                length: Number(length),
+                breadth: Number(breadth),
+                height: Number(height),
+                weight: Number(weight),
+            });
+            setOrder(res.order);
+            toast.success("Order pushed to Shiprocket");
+        } catch (err: any) {
+            toast.error(err.message || "Failed to push order to Shiprocket");
+        } finally {
+            setActionLoading(null);
         }
     }
 
@@ -122,6 +150,7 @@ function AdminOrderDetail() {
     }
 
     const trackData = tracking?.tracking_data?.shipment_track?.[0];
+    const notYetShipped = !order.srOrderId;
 
     return (
         <>
@@ -176,17 +205,80 @@ function AdminOrderDetail() {
                         </CardContent>
                     </Card>
 
+                    {/* Package dimensions form (pre-shipment) OR live tracking (post-shipment) */}
                     <Card>
-                        <CardHeader><CardTitle className="text-sm">Shiprocket Tracking</CardTitle></CardHeader>
-                        <CardContent className="text-sm space-y-2">
-                            {!order.srAwbCode ? (
-                                <p className="text-muted-foreground">AWB not yet assigned.</p>
+                        <CardHeader>
+                            <CardTitle className="text-sm flex items-center gap-2">
+                                <Truck className="h-4 w-4" />
+                                {notYetShipped ? "Package Details & Shiprocket" : "Shiprocket Tracking"}
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="text-sm space-y-3">
+                            {notYetShipped ? (
+                                <>
+                                    <p className="text-muted-foreground">
+                                        Enter the package dimensions and weight to create the Shiprocket order.
+                                    </p>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <Label htmlFor="length" className="text-xs">Length (cm)</Label>
+                                            <Input
+                                                id="length"
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={dims.length}
+                                                onChange={(e) => setDims((d) => ({ ...d, length: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="breadth" className="text-xs">Breadth (cm)</Label>
+                                            <Input
+                                                id="breadth"
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={dims.breadth}
+                                                onChange={(e) => setDims((d) => ({ ...d, breadth: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="height" className="text-xs">Height (cm)</Label>
+                                            <Input
+                                                id="height"
+                                                type="number"
+                                                min="0"
+                                                step="0.1"
+                                                value={dims.height}
+                                                onChange={(e) => setDims((d) => ({ ...d, height: e.target.value }))}
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <Label htmlFor="weight" className="text-xs">Weight (kg)</Label>
+                                            <Input
+                                                id="weight"
+                                                type="number"
+                                                min="0"
+                                                step="0.01"
+                                                value={dims.weight}
+                                                onChange={(e) => setDims((d) => ({ ...d, weight: e.target.value }))}
+                                            />
+                                        </div>
+                                    </div>
+                                    <Button
+                                        className="w-full"
+                                        disabled={actionLoading === "ship" || order.status === "Cancelled"}
+                                        onClick={handleConfirmAndShip}
+                                    >
+                                        {actionLoading === "ship" ? "Pushing to Shiprocket..." : "Confirm & Push to Shiprocket"}
+                                    </Button>
+                                </>
                             ) : (
                                 <>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <p className="text-xs text-muted-foreground">AWB</p>
-                                            <p>{order.srAwbCode}</p>
+                                            <p>{order.srAwbCode || "Not yet assigned"}</p>
                                         </div>
                                         <div>
                                             <p className="text-xs text-muted-foreground">Courier</p>
@@ -202,6 +294,15 @@ function AdminOrderDetail() {
                                             <div>
                                                 <p className="text-xs text-muted-foreground">EDD</p>
                                                 <p>{new Date(trackData.edd).toLocaleDateString("en-IN")}</p>
+                                            </div>
+                                        )}
+                                        {order.packageLength && (
+                                            <div>
+                                                <p className="text-xs text-muted-foreground">Package</p>
+                                                <p>
+                                                    {order.packageLength}×{order.packageBreadth}×{order.packageHeight} cm,{" "}
+                                                    {order.packageWeight} kg
+                                                </p>
                                             </div>
                                         )}
                                     </div>

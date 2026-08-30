@@ -1,0 +1,15 @@
+const express = require("express");
+const {
+  getPendingShipments,
+  confirmAndShipOrder,
+} = require("../controllers/adminShiprocketController");
+const { protectAdmin } = require("../middleware/adminAuthMiddleware");
+
+const router = express.Router();
+
+router.use(protectAdmin);
+
+router.get("/pending", getPendingShipments);
+router.post("/:orderId/confirm-ship", confirmAndShipOrder);
+
+module.exports = router;

@@ -14,6 +14,14 @@ async function srRequest(method, path, data = null) {
   return res.data;
 }
 
+function createOrder(payload) {
+  return srRequest('post', '/orders/create/adhoc', payload);
+}
+
+function assignAwb(shipmentId) {
+  return srRequest('post', '/courier/assign/awb', { shipment_id: shipmentId });
+}
+
 function trackOrder(awbCode) {
   return srRequest('get', `/courier/track/awb/${awbCode}`);
 }
@@ -39,6 +47,8 @@ function cancelOrder(orderIds) {
 }
 
 module.exports = {
+  createOrder,
+  assignAwb,
   trackOrder,
   generateManifest,
   printManifest,
