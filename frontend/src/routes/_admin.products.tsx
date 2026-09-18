@@ -89,10 +89,7 @@ import {
 import { useAdmin } from "@/lib/admin-store";
 
 import {
-  calcGoldPrice,
-  calcSilverPrice,
   inr,
-  productTotal,
   type Product,
 } from "@/lib/mock";
 
@@ -155,6 +152,223 @@ const EMPTY_SILVER: Partial<Product> = {
 
 const MAX_PRODUCT_IMAGES = 4;
 
+const RATES_API_URL =
+  "https://suvarnagold-16e5.vercel.app/api/rates";
+
+type RatesApiResponse = {
+  gold22: string | number;
+  gold24: string | number;
+  gold18: string | number;
+  silver: string | number;
+  source?: string;
+  updatedAt?: string;
+  cached?: boolean;
+};
+
+type LiveMetalRates = {
+  gold22: number;
+  gold24: number;
+  gold18: number;
+  silver: number;
+  source?: string;
+  updatedAt?: string;
+  cached?: boolean;
+};
+
+type PriceBreakdown = {
+  rate: number;
+  metalVal: number;
+  making: number;
+  subtotal: number;
+  gst: number;
+  total: number;
+};
+
+function parseRateValue(
+  value: string | number
+): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value)
+      ? value
+      : 0;
+  }
+
+  const parsed = Number(
+    value.replace(/[^0-9.]/g, "")
+  );
+
+  return Number.isFinite(parsed)
+    ? parsed
+    : 0;
+}
+
+function normalizeRates(
+  data: RatesApiResponse
+): LiveMetalRates {
+  return {
+    gold22: parseRateValue(data.gold22),
+    gold24: parseRateValue(data.gold24),
+    gold18: parseRateValue(data.gold18),
+    silver: parseRateValue(data.silver),
+    source: data.source,
+    updatedAt: data.updatedAt,
+    cached: data.cached,
+  };
+}
+
+function getGoldRatePerGram(
+  purity: string | undefined,
+  rates: LiveMetalRates
+): number {
+  switch (purity) {
+    case "22K":
+      return rates.gold22;
+
+    case "18K":
+      return rates.gold18;
+
+    case "14K":
+      // 14K = 58.3% of 24K gold.
+      return rates.gold24 * 0.583;
+
+    case "9K":
+      // 9K = 37.5% of 24K gold.
+      return rates.gold24 * 0.375;
+
+    case "24K":
+      return rates.gold24;
+
+    default:
+      return rates.gold22;
+  }
+}
+
+function getSilverRatePerGram(
+  purity: string | undefined,
+  rates: LiveMetalRates
+): number {
+  const purityNumber = Number.parseFloat(
+    purity ?? "0"
+  );
+
+  if (!Number.isFinite(purityNumber)) {
+    return 0;
+  }
+
+  // User-required formula:
+  // silver purity / 100 * silver rate.
+  return (purityNumber / 100) *
+    rates.silver;
+}
+
+function calculateProductPrice(
+  product: Partial<Product>,
+  rates: LiveMetalRates | null
+): PriceBreakdown {
+  if (!rates) {
+    return {
+      rate: 0,
+      metalVal: 0,
+      making: 0,
+      subtotal: 0,
+      gst: 0,
+      total: 0,
+    };
+  }
+
+  const gstPercentage =
+    Number(product.gstRate ?? 3);
+
+  if (
+    product.metal === "Silver" &&
+    product.isDirectSterling
+  ) {
+    const subtotal = Number(
+      product.pieceCost ?? 0
+    );
+
+    const gst = Math.round(
+      subtotal *
+        (gstPercentage / 100)
+    );
+
+    return {
+      rate: 0,
+      metalVal: subtotal,
+      making: 0,
+      subtotal,
+      gst,
+      total: subtotal + gst,
+    };
+  }
+
+  const grossWeight = Number(
+    product.grossWeight ?? 0
+  );
+
+  const stoneWeight = Number(
+    product.stoneWeight ?? 0
+  );
+
+  const netWeight = Math.max(
+    0,
+    grossWeight - stoneWeight
+  );
+
+  const rate =
+    product.metal === "Gold"
+      ? getGoldRatePerGram(
+          product.purity,
+          rates
+        )
+      : getSilverRatePerGram(
+          product.purity,
+          rates
+        );
+
+  const metalVal = Math.round(
+    netWeight * rate
+  );
+
+  const making = Math.round(
+    metalVal *
+      (Number(product.va ?? 0) / 100)
+  );
+
+  const stoneCost = Number(
+    product.stoneCost ?? 0
+  );
+
+  const subtotal =
+    metalVal +
+    making +
+    stoneCost;
+
+  const gst = Math.round(
+    subtotal *
+      (gstPercentage / 100)
+  );
+
+  return {
+    rate,
+    metalVal,
+    making,
+    subtotal,
+    gst,
+    total: subtotal + gst,
+  };
+}
+
+function calculateProductTotal(
+  product: Partial<Product>,
+  rates: LiveMetalRates | null
+): number {
+  return calculateProductPrice(
+    product,
+    rates
+  ).total;
+}
+
 /* ============================================================
    PRODUCTS PAGE
 ============================================================ */
@@ -163,7 +377,6 @@ function ProductsPage() {
   const {
     products,
     productsLoading,
-    rates,
     deleteProduct,
     bulkProductAction,
     categories,
@@ -185,6 +398,92 @@ function ProductsPage() {
 
   const [editing, setEditing] =
     useState<Partial<Product> | null>(null);
+
+  const [liveRates, setLiveRates] =
+    useState<LiveMetalRates | null>(null);
+
+  const [ratesLoading, setRatesLoading] =
+    useState(true);
+
+  const [ratesError, setRatesError] =
+    useState<string | null>(null);
+
+  /* ==========================================================
+     LOAD LIVE GOLD / SILVER RATES
+  ========================================================== */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRates() {
+      try {
+        setRatesLoading(true);
+
+        const response = await fetch(
+          RATES_API_URL,
+          {
+            method: "GET",
+            cache: "no-store",
+          }
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `Rates API failed with status ${response.status}`
+          );
+        }
+
+        const data =
+          (await response.json()) as RatesApiResponse;
+
+        const normalized =
+          normalizeRates(data);
+
+        if (
+          normalized.gold22 <= 0 ||
+          normalized.gold24 <= 0 ||
+          normalized.gold18 <= 0 ||
+          normalized.silver <= 0
+        ) {
+          throw new Error(
+            "Rates API returned invalid metal rates"
+          );
+        }
+
+        if (!cancelled) {
+          setLiveRates(normalized);
+          setRatesError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setRatesError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load live metal rates"
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setRatesLoading(false);
+        }
+      }
+    }
+
+    void loadRates();
+
+    // Refresh live rates every 5 minutes while this page is open.
+    const intervalId = window.setInterval(
+      () => {
+        void loadRates();
+      },
+      5 * 60 * 1000
+    );
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
 
   /* ==========================================================
      FILTERED PRODUCTS
@@ -308,6 +607,14 @@ function ProductsPage() {
       return;
     }
 
+    if (!liveRates) {
+      toast.error(
+        ratesError ??
+          "Live metal rates are not available yet"
+      );
+      return;
+    }
+
     const rows = filtered.map(
       (p) => ({
         "Product ID": p.id,
@@ -340,10 +647,9 @@ function ProductsPage() {
           p.pieceCost ?? 0,
 
         Price:
-          p.livePrice ??
-          productTotal(
+          calculateProductTotal(
             p,
-            rates
+            liveRates
           ),
 
         Stock:
@@ -405,6 +711,14 @@ function ProductsPage() {
       return;
     }
 
+    if (!liveRates) {
+      toast.error(
+        ratesError ??
+          "Live metal rates are not available yet"
+      );
+      return;
+    }
+
     const doc = new jsPDF({
       orientation: "landscape",
     });
@@ -451,10 +765,9 @@ function ProductsPage() {
           p.category,
           p.purity,
           inr(
-            p.livePrice ??
-              productTotal(
+            calculateProductTotal(
                 p,
-                rates
+                liveRates
               )
           ),
           p.stock ?? 0,
@@ -903,10 +1216,9 @@ function ProductsPage() {
                     <TableCell className="tabular-nums font-medium">
 
                       {inr(
-                        p.livePrice ??
-                          productTotal(
+                        calculateProductTotal(
                             p,
-                            rates
+                            liveRates
                           )
                       )}
 
@@ -1005,6 +1317,9 @@ function ProductsPage() {
 
       <ProductSheet
         product={editing}
+        liveRates={liveRates}
+        ratesLoading={ratesLoading}
+        ratesError={ratesError}
         onClose={() =>
           setEditing(null)
         }
@@ -1019,13 +1334,18 @@ function ProductsPage() {
 
 function ProductSheet({
   product,
+  liveRates,
+  ratesLoading,
+  ratesError,
   onClose,
 }: {
   product: Partial<Product> | null;
+  liveRates: LiveMetalRates | null;
+  ratesLoading: boolean;
+  ratesError: string | null;
   onClose: () => void;
 }) {
   const {
-    rates,
     createProduct,
     updateProduct,
     categories,
@@ -1135,38 +1455,19 @@ function ProductSheet({
   );
 
   const basePrice =
-    p.metal === "Gold"
-      ? calcGoldPrice(
-          {
-            grossWeight:
-              p.grossWeight,
-            stoneWeight:
-              p.stoneWeight,
-            stoneCost:
-              p.stoneCost,
-            purity:
-              p.purity!,
-            va: p.va,
-          },
-          rates
-        )
-      : calcSilverPrice(
-          p as Product,
-          rates
-        );
+    calculateProductPrice(
+      p,
+      liveRates
+    );
 
   const gstPercentage =
     p.gstRate ?? 3;
 
   const calculatedGst =
-    Math.round(
-      basePrice.subtotal *
-        (gstPercentage / 100)
-    );
+    basePrice.gst;
 
   const calculatedTotal =
-    basePrice.subtotal +
-    calculatedGst;
+    basePrice.total;
 
   const isSilverSterlingAllowed =
     p.metal === "Silver" &&
@@ -1333,6 +1634,14 @@ function ProductSheet({
       return;
     }
 
+    if (!liveRates) {
+      toast.error(
+        ratesError ??
+          "Live gold and silver rates are not available yet"
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -1362,6 +1671,8 @@ function ProductSheet({
           sku: finalSku,
           gstRate:
             gstPercentage,
+          livePrice:
+            calculatedTotal,
         };
 
       if (p.id) {
@@ -2335,7 +2646,11 @@ function ProductSheet({
             onClick={
               handleSave
             }
-            disabled={saving}
+            disabled={
+              saving ||
+              ratesLoading ||
+              !liveRates
+            }
           >
             {saving
               ? "Saving..."
